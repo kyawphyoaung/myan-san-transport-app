@@ -1,0 +1,9 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global styles or custom fonts can go here */
+body {
+  font-family: 'Inter', sans-serif; /* Tailwind config မှာ define လုပ်ထားတဲ့ Inter font ကို အသုံးပြုပါ */
+}

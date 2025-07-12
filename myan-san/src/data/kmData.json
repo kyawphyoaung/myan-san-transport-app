@@ -1,0 +1,12 @@
+[
+  { "start_point": "အေးရှားဝေါ", "destination_point": "ဂန္ဒီ+ညောင်တန်း+ပုစွန်တောင်စျေး+ဗိုလ်တထောင်", "km_value": 150 },
+  { "start_point": "MIP", "destination_point": "ဂန္ဒီ+ညောင်တန်း+ပုစွန်တောင်စျေး+ဗိုလ်တထောင်", "km_value": 150 },
+  { "start_point": "အေးရှားဝေါ", "destination_point": "စက်ဆန်း", "km_value": 160 },
+  { "start_point": "MIP", "destination_point": "စက်ဆန်း", "km_value": 160 },
+  { "start_point": "အေးရှားဝေါ", "destination_point": "သာကေတ", "km_value": 140 },
+  { "start_point": "MIP", "destination_point": "သာကေတ", "km_value": 140 },
+  { "start_point": "သီလဝါ", "destination_point": "ဂန္ဒီ+ညောင်တန်း+ပုစွန်တောင်စျေး+ဗိုလ်တထောင်", "km_value": 200 },
+  { "start_point": "သီလဝါ", "destination_point": "စက်ဆန်း", "km_value": 210 },
+  { "start_point": "သီလဝါ", "destination_point": "သာကေတ", "km_value": 190 },
+  { "start_point": "သီလဝါ", "destination_point": "MIP", "km_value": 70 }
+]
