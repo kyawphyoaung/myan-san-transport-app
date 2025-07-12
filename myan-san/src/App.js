@@ -1,16 +1,17 @@
 // myan-san/src/App.js
 import React, { useState } from 'react';
+import DashboardLayout from './components/DashboardLayout';
 import HomePage from './pages/HomePage';
 import CarManagementPage from './pages/CarManagementPage';
 import DriverManagementPage from './pages/DriverManagementPage';
-import AllTripsPage from './pages/AllTripsPage'; // AllTripsPage ကို import လုပ်ပါ။
-import FuelConsumptionPage from './pages/FuelConsumptionPage'; // FuelConsumptionPage ကို import လုပ်ပါ။
-import DashboardLayout from './components/DashboardLayout';
+import AllTripsPage from './pages/AllTripsPage'; // Make sure this is imported if you have it
+import FuelConsumptionPage from './pages/FuelConsumptionPage'; // Make sure this is imported if you have it
+import SettingsPage from './pages/SettingsPage'; // NEW: Import SettingsPage
 
 function App() {
-  // 'home', 'carManagement', 'driverManagement', 'allTrips', 'fuelConsumption' စသည်ဖြင့် လက်ရှိ page ကို ထိန်းချုပ်ရန်
-  const [currentPage, setCurrentPage] = useState('home'); 
+  const [currentPage, setCurrentPage] = useState('home'); // Default page is 'home'
 
+  // This function will render the correct page based on currentPage state
   const renderPage = () => {
     switch (currentPage) {
       case 'home':
@@ -21,19 +22,19 @@ function App() {
         return <DriverManagementPage />;
       case 'allTrips':
         return <AllTripsPage />;
-      case 'fuelConsumption': // FuelConsumptionPage အတွက် case အသစ် ထည့်သွင်းခြင်း
+      case 'fuelConsumption': // Assuming you might have a dedicated fuel consumption page
         return <FuelConsumptionPage />;
+      case 'settings': // NEW: Render SettingsPage
+        return <SettingsPage />;
       default:
         return <HomePage />;
     }
   };
 
   return (
-    <div className="App">
-      <DashboardLayout currentPage={currentPage} setCurrentPage={setCurrentPage}>
-        {renderPage()}
-      </DashboardLayout>
-    </div>
+    <DashboardLayout currentPage={currentPage} setCurrentPage={setCurrentPage}>
+      {renderPage()}
+    </DashboardLayout>
   );
 }
 

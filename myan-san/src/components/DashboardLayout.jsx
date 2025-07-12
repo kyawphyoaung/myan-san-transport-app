@@ -7,7 +7,7 @@ import {
   DirectionsCar as DirectionsCarIcon, // Car icon
   Group as GroupIcon, // Driver icon
   ListAlt as ListAltIcon, // List/Records icon
-  LocalGasStation as LocalGasStationIcon // Fuel icon (for Fuel Consumption Page)
+  Settings as SettingsIcon // Settings icon - NEW
 } from '@mui/icons-material';
 
 function DashboardLayout({ currentPage, setCurrentPage, children }) {
@@ -18,11 +18,11 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
 
   // Page titles and their corresponding icons
   const pageInfo = {
-    home: { title: 'ခရီးစဉ် တွက်ချက်ခြင်း (New Trip)', icon: <HomeIcon sx={{ mr: 1 }} /> },
+    home: { title: 'ကားစာရင်း', icon: <HomeIcon sx={{ mr: 1 }} /> },
     carManagement: { title: 'ကားစီမံခန့်ခွဲမှု', icon: <DirectionsCarIcon sx={{ mr: 1 }} /> },
     driverManagement: { title: 'ယာဉ်မောင်း စီမံခန့်ခွဲမှု', icon: <GroupIcon sx={{ mr: 1 }} /> },
-    allTrips: { title: 'ခရီးစဉ်မှတ်တမ်းများ (All Trips)', icon: <ListAltIcon sx={{ mr: 1 }} /> },
-    fuelConsumption: { title: 'ဆီစားနှုန်း မှတ်တမ်း', icon: <LocalGasStationIcon sx={{ mr: 1 }} /> }, // NEW
+    allTrips: { title: 'မှတ်တမ်းများ', icon: <ListAltIcon sx={{ mr: 1 }} /> },
+    settings: { title: 'ဒေတာ စီမံခန့်ခွဲမှု', icon: <SettingsIcon sx={{ mr: 1 }} /> }, // NEW
   };
 
   const handlePageChange = (page) => {
@@ -82,10 +82,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
         className={`fixed top-0 left-0 h-full bg-blue-800 text-white shadow-lg flex flex-col transition-all duration-300 ease-in-out z-20 overflow-hidden pt-16`} /* pt-16 သည် Header အောက်တွင် နေရာယူရန် */
         style={{ width: sidebarOpen ? sidebarWidth : '0px', transform: sidebarOpen ? 'translateX(0)' : `translateX(-${sidebarWidth})` }}
       >
-        {/* "Admin Dashboard" စာသားကို ဖယ်ရှားထားဆဲ */}
-        {/* <div className="p-6 text-2xl font-bold text-center border-b border-blue-700">
-          Admin Dashboard
-        </div> */}
         <nav className="flex-1 px-4 py-6 overflow-y-auto"> {/* Sidebar content တွင် scrollbar လိုအပ်ပါက */}
           <ul>
             <li className="mb-2">
@@ -97,17 +93,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
               >
                 <HomeIcon sx={{ mr: 2 }} />
                 {pageInfo.home.title}
-              </button>
-            </li>
-            <li className="mb-2">
-              <button
-                onClick={() => handlePageChange('allTrips')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${ // Added flex and items-center
-                  currentPage === 'allTrips' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
-              >
-                <ListAltIcon sx={{ mr: 2 }} />
-                {pageInfo.allTrips.title}
               </button>
             </li>
             <li className="mb-2">
@@ -132,15 +117,28 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
                 {pageInfo.driverManagement.title}
               </button>
             </li>
+            {/* AllTripsPage အတွက် navigation link အသစ် */}
             <li className="mb-2">
               <button
-                onClick={() => handlePageChange('fuelConsumption')} // New button for Fuel Consumption
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'fuelConsumption' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
+                onClick={() => handlePageChange('allTrips')}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${ // Added flex and items-center
+                  currentPage === 'allTrips' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
                 }`}
               >
-                <LocalGasStationIcon sx={{ mr: 2 }} /> {/* Fuel icon */}
-                {pageInfo.fuelConsumption.title}
+                <ListAltIcon sx={{ mr: 2 }} />
+                {pageInfo.allTrips.title}
+              </button>
+            </li>
+            {/* NEW: Settings Page navigation link */}
+            <li className="mb-2">
+              <button
+                onClick={() => handlePageChange('settings')}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
+                  currentPage === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
+                }`}
+              >
+                <SettingsIcon sx={{ mr: 2 }} />
+                {pageInfo.settings.title}
               </button>
             </li>
           </ul>
@@ -152,12 +150,12 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out mt-16`} /* mt-16 သည် Header အမြင့်အတွက် */
+        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out pt-16`} /* pt-16 သည် Header အမြင့်အတွက် */
         style={{ marginLeft: sidebarOpen ? sidebarWidth : '0px' }} /* Sidebar ၏ width အလိုက် Main content ၏ left margin ကို ချိန်ညှိပါပြီ။ */
       >
         {/* Page Content */}
         <main className="flex-1 p-6 overflow-y-auto">
-          {children} {/* This is where the selected page will be rendered */}
+          {children}
         </main>
       </div>
     </div>

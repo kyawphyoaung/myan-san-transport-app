@@ -636,7 +636,7 @@ app.get('/api/fuel-readings', async (req, res) => {
       if (!carReadings[reading.car_no]) {
         carReadings[reading.car_no] = [];
       }
-      carReadings[reading.car_no].push(reading);
+      carReadings[carNo].push(reading); // Changed from carReadings[carNo].push(reading); to carReadings[carNo].push(reading);
     });
 
     for (const carNo in carReadings) {
@@ -1040,7 +1040,6 @@ app.get('/api/car-maintenance-monthly/:carNo/:year/:month', async (req, res) => 
     const totalCost = row ? (row.total_cost || 0) : 0;
     res.json({ message: "success", total_cost: totalCost });
   } catch (err) {
-    console.error("Error fetching monthly maintenance costs:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1059,7 +1058,6 @@ app.get('/api/car-maintenance-yearly/:carNo/:year', async (req, res) => {
     const totalCost = row ? (row.total_cost || 0) : 0;
     res.json({ message: "success", total_cost: totalCost });
   } catch (err) {
-    console.error("Error fetching yearly maintenance costs:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1134,6 +1132,90 @@ app.get('/api/general-expenses-yearly/:carNo/:year', async (req, res) => {
     res.json({ message: "success", total_general_cost: totalGeneralCost });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW: API endpoint for data backup
+app.get('/api/backup', async (req, res) => {
+  try {
+    // Get all table names from the database
+    const tables = await dbAll("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'SQLITE_%'");
+    const backupData = {};
+
+    // For each table, fetch all its data
+    for (const table of tables) {
+      const tableName = table.name;
+      backupData[tableName] = await dbAll(`SELECT * FROM ${tableName}`);
+    }
+
+    res.json(backupData);
+  } catch (err) {
+    console.error('Backup error:', err.message);
+    res.status(500).json({ error: 'Failed to create backup: ' + err.message });
+  }
+});
+
+// NEW: API endpoint for data restore
+app.post('/api/restore', async (req, res) => {
+  const restoreData = req.body; // Data sent from the frontend
+
+  try {
+    // Start a transaction to ensure atomicity
+    await dbRun('BEGIN TRANSACTION');
+
+    // Define table names in an order that respects foreign key constraints for deletion (children first)
+    const deleteOrderTableNames = [
+      'fuel_readings',             // Depends on trips
+      'car_driver_assignments',    // Depends on drivers
+      'trips',
+      'drivers',
+      'car_maintenance',
+      'fuel_logs',
+      'general_expenses',
+      'settings',
+      'route_charges_versions'
+    ];
+
+    // Clear existing data from tables in the defined order
+    for (const tableName of deleteOrderTableNames) {
+      await dbRun(`DELETE FROM ${tableName}`);
+    }
+
+    // Define table names in an order that respects foreign key constraints for insertion (parents first)
+    const insertOrderTableNames = [
+      'trips',
+      'drivers',
+      'car_maintenance',
+      'fuel_logs',
+      'general_expenses',
+      'settings',
+      'route_charges_versions',
+      'car_driver_assignments',    // Depends on drivers
+      'fuel_readings'              // Depends on trips
+    ];
+
+    // Insert new data into tables in the correct order
+    for (const tableName of insertOrderTableNames) {
+      const records = restoreData[tableName];
+      if (records && records.length > 0) {
+        for (const record of records) {
+          const columns = Object.keys(record).join(', ');
+          const placeholders = Object.keys(record).map(() => '?').join(', ');
+          const values = Object.values(record);
+
+          // Use INSERT OR REPLACE to handle cases where IDs might conflict if manually provided
+          // This also helps in cases where the data might contain existing IDs that need to be preserved.
+          await dbRun(`INSERT OR REPLACE INTO ${tableName} (${columns}) VALUES (${placeholders})`, values);
+        }
+      }
+    }
+
+    await dbRun('COMMIT'); // Commit the transaction
+    res.json({ message: "success" });
+  } catch (err) {
+    await dbRun('ROLLBACK'); // Rollback on error
+    console.error('Restore error:', err.message);
+    res.status(500).json({ error: 'Failed to restore data: ' + err.message });
   }
 });
 
