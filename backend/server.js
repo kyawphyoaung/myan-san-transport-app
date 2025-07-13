@@ -201,55 +201,55 @@ const db = new sqlite3.Database(dbPath, (err) => {
         // Initial insert of route charges from the static JSON data
         // This assumes src/data/routeCharges.json is the initial version
         try {
-            const initialRouteCharges = require(path.resolve(__dirname, '../myan-san/src/data/routeCharges.json'));
-            console.log("Successfully loaded initial route charges from JSON."); // Add this log
-            const initialRouteData = JSON.stringify(initialRouteCharges);
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+          const initialRouteCharges = require(path.resolve(__dirname, '../myan-san/src/data/routeCharges.json'));
+          console.log("Successfully loaded initial route charges from JSON."); // Add this log
+          const initialRouteData = JSON.stringify(initialRouteCharges);
+          const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
-            // Check if ANY route charges exist in the table. If not, insert the initial data.
-            // This is more robust for a fresh database setup.
-            db.get(`SELECT COUNT(*) AS count FROM route_charges_versions`, [], (err, row) => {
-              if (err) {
-                console.error("Error checking route charges versions table count:", err.message);
-                return;
-              }
-              if (row.count === 0) { // If table is completely empty, insert
-                db.run(`INSERT INTO route_charges_versions (effective_date, route_data) VALUES (?, ?)`,
-                  [today, initialRouteData],
-                  function(err) {
-                    if (err) {
-                      console.error("Error inserting initial route charges version (empty table):", err.message);
-                    } else {
-                      console.log(`Initial route charges version inserted into empty table with ID: ${this.lastID}`);
-                    }
-                  }
-                );
-              } else {
-                // If table is not empty, check if today's version exists
-                db.get(`SELECT COUNT(*) AS count FROM route_charges_versions WHERE effective_date = ?`, [today], (err, rowToday) => {
+          // Check if ANY route charges exist in the table. If not, insert the initial data.
+          // This is more robust for a fresh database setup.
+          db.get(`SELECT COUNT(*) AS count FROM route_charges_versions`, [], (err, row) => {
+            if (err) {
+              console.error("Error checking route charges versions table count:", err.message);
+              return;
+            }
+            if (row.count === 0) { // If table is completely empty, insert
+              db.run(`INSERT INTO route_charges_versions (effective_date, route_data) VALUES (?, ?)`,
+                [today, initialRouteData],
+                function (err) {
                   if (err) {
-                    console.error("Error checking today's route charges version:", err.message);
-                    return;
-                  }
-                  if (rowToday.count === 0) { // If today's version doesn't exist, insert it
-                    db.run(`INSERT INTO route_charges_versions (effective_date, route_data) VALUES (?, ?)`,
-                      [today, initialRouteData],
-                      function(err) {
-                        if (err) {
-                          console.error("Error inserting today's route charges version:", err.message);
-                        } else {
-                          console.log(`Today's route charges version inserted with ID: ${this.lastID}`);
-                        }
-                      }
-                    );
+                    console.error("Error inserting initial route charges version (empty table):", err.message);
                   } else {
-                    console.log(`Route charges version for ${today} already exists.`);
+                    console.log(`Initial route charges version inserted into empty table with ID: ${this.lastID}`);
                   }
-                });
-              }
-            });
+                }
+              );
+            } else {
+              // If table is not empty, check if today's version exists
+              db.get(`SELECT COUNT(*) AS count FROM route_charges_versions WHERE effective_date = ?`, [today], (err, rowToday) => {
+                if (err) {
+                  console.error("Error checking today's route charges version:", err.message);
+                  return;
+                }
+                if (rowToday.count === 0) { // If today's version doesn't exist, insert it
+                  db.run(`INSERT INTO route_charges_versions (effective_date, route_data) VALUES (?, ?)`,
+                    [today, initialRouteData],
+                    function (err) {
+                      if (err) {
+                        console.error("Error inserting today's route charges version:", err.message);
+                      } else {
+                        console.log(`Today's route charges version inserted with ID: ${this.lastID}`);
+                      }
+                    }
+                  );
+                } else {
+                  console.log(`Route charges version for ${today} already exists.`);
+                }
+              });
+            }
+          });
         } catch (e) {
-            console.error("Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:", e.message); // Improved error log
+          console.error("Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:", e.message); // Improved error log
         }
       });
 
@@ -289,39 +289,39 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
 // Helper function to run database queries as promises
 const dbRun = (query, params = []) => {
-    return new Promise((resolve, reject) => {
-        db.run(query, params, function (err) {
-            if (err) {
-                reject(err);
-            } else {
-                resolve({ id: this.lastID, changes: this.changes });
-            }
-        });
+  return new Promise((resolve, reject) => {
+    db.run(query, params, function (err) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve({ id: this.lastID, changes: this.changes });
+      }
     });
+  });
 };
 
 const dbAll = (query, params = []) => {
-    return new Promise((resolve, reject) => {
-        db.all(query, params, (err, rows) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(rows);
-            }
-        });
+  return new Promise((resolve, reject) => {
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
     });
+  });
 };
 
 const dbGet = (query, params = []) => { // New helper for single row queries
-    return new Promise((resolve, reject) => {
-        db.get(query, params, (err, row) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(row);
-            }
-        });
+  return new Promise((resolve, reject) => {
+    db.get(query, params, (err, row) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
     });
+  });
 };
 
 
@@ -943,16 +943,16 @@ app.post('/api/car-driver-assignments', async (req, res) => {
 
 // NEW: API endpoint to delete a car-driver assignment by car_no
 app.delete('/api/car-driver-assignments/:carNo', async (req, res) => {
-    const { carNo } = req.params;
-    try {
-        const result = await dbRun('DELETE FROM car_driver_assignments WHERE car_no = ?', [carNo]);
-        if (result.changes === 0) {
-            return res.status(404).json({ message: "error", error: "Car assignment not found for this car number." });
-        }
-        res.json({ message: "success", changes: result.changes });
-    } catch (err) {
-        res.status(500).json({ message: "error", error: err.message });
+  const { carNo } = req.params;
+  try {
+    const result = await dbRun('DELETE FROM car_driver_assignments WHERE car_no = ?', [carNo]);
+    if (result.changes === 0) {
+      return res.status(404).json({ message: "error", error: "Car assignment not found for this car number." });
     }
+    res.json({ message: "success", changes: result.changes });
+  } catch (err) {
+    res.status(500).json({ message: "error", error: err.message });
+  }
 });
 
 
@@ -981,7 +981,7 @@ app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
     const assignment = await dbGet('SELECT car_no FROM car_driver_assignments WHERE driver_name = ?', [driverName]);
 
     if (!assignment) { // If no car is assigned to this driver
-        return res.json({ message: "success", data: [], total_charge: 0 });
+      return res.json({ message: "success", data: [], total_charge: 0 });
     }
 
     const carNo = assignment.car_no;
@@ -1008,7 +1008,7 @@ app.get('/api/driver-trips-yearly/:driverName/:year', async (req, res) => {
     const assignment = await dbGet('SELECT car_no FROM car_driver_assignments WHERE driver_name = ?', [driverName]);
 
     if (!assignment) {
-        return res.json({ message: "success", data: [], total_charge: 0 });
+      return res.json({ message: "success", data: [], total_charge: 0 });
     }
 
     const carNo = assignment.car_no;
@@ -1098,6 +1098,45 @@ app.get('/api/fuel-logs-yearly/:carNo/:year', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// API endpoint to add a new general expense record
+app.post('/api/general-expenses', async (req, res) => {
+  const { carNo, expenseDate, description, cost, remarks } = req.body;
+  if (!carNo || !expenseDate || !description || !cost) {
+    return res.status(400).json({ error: "Missing required general expense fields (carNo, expenseDate, description, cost)." });
+  }
+
+  try {
+    const result = await dbRun(`
+      INSERT INTO general_expenses (car_no, expense_date, description, cost, remarks)
+      VALUES (?, ?, ?, ?, ?)
+    `, [carNo, expenseDate, description, cost, remarks]);
+    res.status(201).json({
+      message: "General expense record added successfully",
+      id: result.id
+    });
+  } catch (err) {
+    console.error("Error inserting general expense record:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API endpoint to get general expenses for a specific car
+// (Optional: You might want to add pagination or date range filtering later)
+app.get('/api/general-expenses/:carNo', async (req, res) => {
+  const { carNo } = req.params;
+  try {
+    const rows = await dbAll("SELECT * FROM general_expenses WHERE car_no = ? ORDER BY expense_date DESC", [carNo]);
+    res.json({
+      message: "success",
+      data: rows
+    });
+  } catch (err) {
+    console.error("Error fetching general expenses:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // API endpoint to get general expenses for a specific car within a month
 app.get('/api/general-expenses-monthly/:carNo/:year/:month', async (req, res) => {
