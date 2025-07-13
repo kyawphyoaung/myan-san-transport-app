@@ -126,7 +126,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
         });
       });
 
-      // NEW: Fuel Readings Table (for FuelConsumptionPage - consumption per trip)
+      // Fuel Readings Table (for FuelConsumptionPage - consumption per trip)
       db.run(`
         CREATE TABLE IF NOT EXISTS fuel_readings (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -587,10 +587,37 @@ app.post('/api/fuel-readings', async (req, res) => {
   }
 
   try {
+    // Fetch previous reading for the same car to calculate consumption
+    const previousReading = await dbGet(`
+      SELECT fuel_gauge_reading, trip_id FROM fuel_readings
+      WHERE car_no = ? AND (reading_date < ? OR (reading_date = ? AND reading_time < ?))
+      ORDER BY reading_date DESC, reading_time DESC
+      LIMIT 1
+    `, [carNo, readingDate, readingDate, readingTime]);
+
+    const previousFuelGaugeReading = previousReading ? previousReading.fuel_gauge_reading : null;
+    let fuelConsumedGallons = null;
+    if (previousFuelGaugeReading !== null) {
+      fuelConsumedGallons = previousFuelGaugeReading - fuelGaugeReading;
+    }
+
+    // Fetch km_travelled for the current trip
+    const trip = await dbGet(`SELECT km_travelled FROM trips WHERE id = ?`, [tripId]);
+    const kmForThisTrip = trip ? trip.km_travelled : null;
+
+    let kmPerGallon = null;
+    if (kmForThisTrip !== null && fuelConsumedGallons !== null && fuelConsumedGallons > 0) {
+      kmPerGallon = kmForThisTrip / fuelConsumedGallons;
+    }
+
     const result = await dbRun(`
-      INSERT INTO fuel_readings (car_no, trip_id, reading_date, reading_time, fuel_gauge_reading, remarks)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [carNo, tripId, readingDate, readingTime, fuelGaugeReading, remarks]);
+      INSERT INTO fuel_readings (car_no, trip_id, reading_date, reading_time, fuel_gauge_reading,
+                                 previous_fuel_gauge_reading, fuel_consumed_gallons,
+                                 km_for_this_trip, km_per_gallon, remarks)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [carNo, tripId, readingDate, readingTime, fuelGaugeReading,
+      previousFuelGaugeReading, fuelConsumedGallons,
+      kmForThisTrip, kmPerGallon, remarks]);
 
     res.status(201).json({
       message: "Fuel reading added successfully",
@@ -608,7 +635,8 @@ app.post('/api/fuel-readings', async (req, res) => {
 // API endpoint to get all fuel readings with trip details (for FuelConsumptionPage)
 app.get('/api/fuel-readings', async (req, res) => {
   try {
-    const query = `
+    // Fetch all fuel readings along with associated trip details
+    const readings = await dbAll(`
       SELECT
         fr.id,
         fr.car_no,
@@ -616,6 +644,10 @@ app.get('/api/fuel-readings', async (req, res) => {
         fr.reading_date,
         fr.reading_time,
         fr.fuel_gauge_reading,
+        fr.previous_fuel_gauge_reading,
+        fr.fuel_consumed_gallons,
+        fr.km_for_this_trip,
+        fr.km_per_gallon,
         fr.remarks,
         t.date AS trip_date,
         t.from_location,
@@ -623,42 +655,39 @@ app.get('/api/fuel-readings', async (req, res) => {
         t.km_travelled
       FROM fuel_readings fr
       LEFT JOIN trips t ON fr.trip_id = t.id
-      ORDER BY fr.reading_date DESC, fr.reading_time DESC;
-    `;
-    const rows = await dbAll(query);
+      ORDER BY fr.car_no, fr.reading_date ASC, fr.reading_time ASC
+    `);
 
-    // Calculate previous_fuel_gauge_reading, fuel_consumed_gallons, km_per_gallon
+    // Re-calculate previous_fuel_gauge_reading, fuel_consumed_gallons, km_per_gallon
+    // This is crucial because if a reading is deleted or added in the middle,
+    // the previous calculations stored in DB might become invalid.
     const processedReadings = [];
-    const carReadings = {}; // To store readings per car for previous value calculation
+    const carLastReading = {}; // To store the last reading for each car's calculation
 
-    // Group readings by car_no and sort them by date/time for calculation
-    rows.forEach(reading => {
-      if (!carReadings[reading.car_no]) {
-        carReadings[reading.car_no] = [];
+    for (const reading of readings) {
+      const carNo = reading.car_no;
+      const currentReadingValue = parseFloat(reading.fuel_gauge_reading);
+      let previousFuelGaugeReadingCalculated = null;
+      let fuelConsumedGallonsCalculated = null;
+      let kmPerGallonCalculated = null;
+
+      if (carLastReading[carNo] !== undefined) {
+        previousFuelGaugeReadingCalculated = carLastReading[carNo];
+        fuelConsumedGallonsCalculated = previousFuelGaugeReadingCalculated - currentReadingValue;
+
+        if (reading.km_travelled && fuelConsumedGallonsCalculated > 0) {
+          kmPerGallonCalculated = reading.km_travelled / fuelConsumedGallonsCalculated;
+        }
       }
-      carReadings[carNo].push(reading); // Changed from carReadings[carNo].push(reading); to carReadings[carNo].push(reading);
-    });
 
-    for (const carNo in carReadings) {
-      // Sort readings for each car by date and time in ascending order to calculate consumption
-      carReadings[carNo].sort((a, b) => {
-        const dateA = new Date(`${a.reading_date}T${a.reading_time}`);
-        const dateB = new Date(`${b.reading_date}T${b.reading_time}`);
-        return dateA - dateB;
+      processedReadings.push({
+        ...reading,
+        previous_fuel_gauge_reading: previousFuelGaugeReadingCalculated,
+        fuel_consumed_gallons: fuelConsumedGallonsCalculated,
+        km_per_gallon: kmPerGallonCalculated,
       });
 
-      for (let i = 0; i < carReadings[carNo].length; i++) {
-        const current = carReadings[carNo][i];
-        const previous = i > 0 ? carReadings[carNo][i - 1] : null;
-
-        current.previous_fuel_gauge_reading = previous ? previous.fuel_gauge_reading : null;
-        current.fuel_consumed_gallons = previous ? (previous.fuel_gauge_reading - current.fuel_gauge_reading) : null;
-        current.km_per_gallon = (current.fuel_consumed_gallons > 0 && current.km_travelled > 0)
-          ? (current.km_travelled / current.fuel_consumed_gallons)
-          : null;
-
-        processedReadings.push(current);
-      }
+      carLastReading[carNo] = currentReadingValue; // Update the last reading for this car
     }
 
     // Sort the final array in descending order for display (latest first)
@@ -668,11 +697,7 @@ app.get('/api/fuel-readings', async (req, res) => {
       return dateB - dateA; // Descending order
     });
 
-
-    res.json({
-      message: "success",
-      data: processedReadings
-    });
+    res.json({ message: "success", data: processedReadings });
   } catch (err) {
     console.error("Error fetching fuel readings:", err.message);
     res.status(500).json({ error: err.message });
@@ -723,6 +748,21 @@ app.put('/api/fuel-readings/:id', async (req, res) => {
   }
 
   try {
+    // Check if the new tripId is already associated with another reading (unless it's the current reading's tripId)
+    const existingReadingForTrip = await dbGet('SELECT id FROM fuel_readings WHERE trip_id = ? AND id != ?', [tripId, id]);
+    if (existingReadingForTrip) {
+      return res.status(409).json({ error: "ရွေးချယ်ထားသော ခရီးစဉ်အတွက် ဆီစားနှုန်းမှတ်တမ်း ရှိပြီးသားဖြစ်ပါသည်။" });
+    }
+
+    // Re-calculate previous_fuel_gauge_reading, fuel_consumed_gallons, km_for_this_trip, km_per_gallon
+    // This needs to be done dynamically based on the new reading and its neighbors
+    // For simplicity, we'll fetch the trip's km_travelled here. The full recalculation
+    // for all readings will happen when GET /api/fuel-readings is called.
+    const trip = await dbGet(`SELECT km_travelled FROM trips WHERE id = ?`, [tripId]);
+    const kmForThisTrip = trip ? trip.km_travelled : null;
+
+    // For update, we only update the direct fields. The derived fields will be recalculated
+    // when the full list is fetched.
     const result = await dbRun(`
       UPDATE fuel_readings SET
         car_no = ?,
@@ -730,9 +770,10 @@ app.put('/api/fuel-readings/:id', async (req, res) => {
         reading_date = ?,
         reading_time = ?,
         fuel_gauge_reading = ?,
+        km_for_this_trip = ?, -- Update km_for_this_trip based on the new tripId
         remarks = ?
       WHERE id = ?
-    `, [carNo, tripId, readingDate, readingTime, fuelGaugeReading, remarks, id]);
+    `, [carNo, tripId, readingDate, readingTime, fuelGaugeReading, kmForThisTrip, remarks, id]);
 
     if (result.changes === 0) {
       return res.status(404).json({ message: "Fuel reading not found." });
@@ -742,9 +783,6 @@ app.put('/api/fuel-readings/:id', async (req, res) => {
       id: id
     });
   } catch (err) {
-    if (err.message.includes("UNIQUE constraint failed: fuel_readings.trip_id")) {
-      return res.status(409).json({ error: "This trip already has a fuel reading assigned to another record." });
-    }
     console.error("Error updating fuel reading:", err.message);
     res.status(500).json({ error: err.message });
   }
@@ -941,7 +979,7 @@ app.post('/api/car-driver-assignments', async (req, res) => {
   }
 });
 
-// NEW: API endpoint to delete a car-driver assignment by car_no
+// API endpoint to delete a car-driver assignment by car_no
 app.delete('/api/car-driver-assignments/:carNo', async (req, res) => {
   const { carNo } = req.params;
   try {
@@ -998,7 +1036,7 @@ app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
   }
 });
 
-// NEW: API endpoint to get trips for a specific driver within a year
+// API endpoint to get trips for a specific driver within a year
 app.get('/api/driver-trips-yearly/:driverName/:year', async (req, res) => {
   const { driverName, year } = req.params;
   const startDate = `${year}-01-01`;
@@ -1044,7 +1082,7 @@ app.get('/api/car-maintenance-monthly/:carNo/:year/:month', async (req, res) => 
   }
 });
 
-// NEW: API endpoint to get maintenance costs for a specific car within a year
+// API endpoint to get maintenance costs for a specific car within a year
 app.get('/api/car-maintenance-yearly/:carNo/:year', async (req, res) => {
   const { carNo, year } = req.params;
   const startDate = `${year}-01-01`;
@@ -1081,7 +1119,7 @@ app.get('/api/fuel-logs-monthly/:carNo/:year/:month', async (req, res) => {
   }
 });
 
-// NEW: API endpoint to get fuel costs for a specific car within a year (for DriverManagementPage)
+// API endpoint to get fuel costs for a specific car within a year (for DriverManagementPage)
 app.get('/api/fuel-logs-yearly/:carNo/:year', async (req, res) => {
   const { carNo, year } = req.params;
   const startDate = `${year}-01-01`;
@@ -1156,7 +1194,7 @@ app.get('/api/general-expenses-monthly/:carNo/:year/:month', async (req, res) =>
   }
 });
 
-// NEW: API endpoint to get general expenses for a specific car within a year
+// API endpoint to get general expenses for a specific car within a year
 app.get('/api/general-expenses-yearly/:carNo/:year', async (req, res) => {
   const { carNo, year } = req.params;
   const startDate = `${year}-01-01`;
@@ -1174,7 +1212,7 @@ app.get('/api/general-expenses-yearly/:carNo/:year', async (req, res) => {
   }
 });
 
-// NEW: API endpoint for data backup
+// API endpoint for data backup
 app.get('/api/backup', async (req, res) => {
   try {
     // Get all table names from the database
@@ -1194,7 +1232,7 @@ app.get('/api/backup', async (req, res) => {
   }
 });
 
-// NEW: API endpoint for data restore
+// API endpoint for data restore
 app.post('/api/restore', async (req, res) => {
   const restoreData = req.body; // Data sent from the frontend
 

@@ -7,6 +7,7 @@ import {
   DirectionsCar as DirectionsCarIcon, // Car icon
   Group as GroupIcon, // Driver icon
   ListAlt as ListAltIcon, // List/Records icon
+  LocalGasStation as LocalGasStationIcon, // Fuel Consumption icon - NEW
   Settings as SettingsIcon // Settings icon - NEW
 } from '@mui/icons-material';
 
@@ -22,6 +23,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
     carManagement: { title: 'ကားစီမံခန့်ခွဲမှု', icon: <DirectionsCarIcon sx={{ mr: 1 }} /> },
     driverManagement: { title: 'ယာဉ်မောင်း စီမံခန့်ခွဲမှု', icon: <GroupIcon sx={{ mr: 1 }} /> },
     allTrips: { title: 'မှတ်တမ်းများ', icon: <ListAltIcon sx={{ mr: 1 }} /> },
+    fuelConsumption: { title: 'ဆီစားနှုန်း မှတ်တမ်း', icon: <LocalGasStationIcon sx={{ mr: 1 }} /> }, // NEW
     settings: { title: 'ဒေတာ စီမံခန့်ခွဲမှု', icon: <SettingsIcon sx={{ mr: 1 }} /> }, // NEW
   };
 
@@ -127,6 +129,18 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
               >
                 <ListAltIcon sx={{ mr: 2 }} />
                 {pageInfo.allTrips.title}
+              </button>
+            </li>
+            {/* NEW: Fuel Consumption Page navigation link */}
+            <li className="mb-2">
+              <button
+                onClick={() => handlePageChange('fuelConsumption')}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
+                  currentPage === 'fuelConsumption' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
+                }`}
+              >
+                <LocalGasStationIcon sx={{ mr: 2 }} />
+                {pageInfo.fuelConsumption.title}
               </button>
             </li>
             {/* NEW: Settings Page navigation link */}
