@@ -97,11 +97,12 @@ const db = new sqlite3.Database(dbPath, (err) => {
       });
 
       // Fuel Logs Table (for CarManagementPage - fuel fill-up records)
+      // Modified to use log_datetime instead of log_date
       db.run(`
         CREATE TABLE IF NOT EXISTS fuel_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
-          log_date TEXT NOT NULL,
+          log_datetime TEXT NOT NULL, -- Changed from log_date to log_datetime
           fuel_amount REAL NOT NULL,
           fuel_cost INTEGER NOT NULL,
           remarks TEXT,
@@ -109,21 +110,37 @@ const db = new sqlite3.Database(dbPath, (err) => {
         )
       `, (err) => {
         if (err) console.error("Error creating fuel_logs table:", err.message);
-        else console.log("Fuel_logs table created or already exists.");
-        // Check for and remove trip_id, reading_date, reading_time, fuel_gauge_reading if they exist
-        db.all(`PRAGMA table_info(fuel_logs)`, (err, columns) => {
-          if (err) {
-            console.error("Error checking table info for fuel_logs:", err.message);
-            return;
-          }
-          const columnNames = columns.map(col => col.name);
-          const columnsToRemove = ['trip_id', 'reading_date', 'reading_time', 'fuel_gauge_reading'];
-          columnsToRemove.forEach(col => {
-            if (columnNames.includes(col)) {
-              console.warn(`Column '${col}' found in fuel_logs. Manual intervention might be needed to remove it if it contains data, as SQLite does not support DROP COLUMN directly without recreating the table.`);
+        else {
+          console.log("Fuel_logs table created or already exists.");
+          // Migration logic: If log_date exists but log_datetime doesn't, migrate data
+          db.all(`PRAGMA table_info(fuel_logs)`, async (err, columns) => {
+            if (err) {
+              console.error("Error checking table info for fuel_logs:", err.message);
+              return;
+            }
+            const columnNames = columns.map(col => col.name);
+            const hasLogDate = columnNames.includes('log_date');
+            const hasLogDatetime = columnNames.includes('log_datetime');
+
+            if (hasLogDate && !hasLogDatetime) {
+              console.log("Migrating fuel_logs data: Adding log_datetime column and populating it.");
+              try {
+                await dbRun(`ALTER TABLE fuel_logs ADD COLUMN log_datetime TEXT`);
+                // Populate log_datetime using existing log_date (assuming time is 00:00:00 if not available)
+                // For simplicity, we'll use '00:00' as default time if log_time was not present
+                await dbRun(`UPDATE fuel_logs SET log_datetime = log_date || ' 00:00' WHERE log_datetime IS NULL`);
+                // After migration, you might want to drop the old log_date column, but SQLite doesn't support it directly.
+                // It would require recreating the table, copying data, and then dropping the old one.
+                // For now, we'll leave log_date as is and ensure new operations use log_datetime.
+                console.log("Fuel_logs migration to log_datetime completed.");
+              } catch (migrateErr) {
+                console.error("Error during fuel_logs migration:", migrateErr.message);
+              }
+            } else if (hasLogDatetime) {
+              console.log("Fuel_logs table already has log_datetime.");
             }
           });
-        });
+        }
       });
 
       // Fuel Readings Table (for FuelConsumptionPage - consumption per trip)
@@ -156,7 +173,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
             const newColumns = [
               { name: 'previous_fuel_gauge_reading', type: 'REAL' },
               { name: 'fuel_consumed_gallons', type: 'REAL' },
-              // Removed km_for_this_trip as it's redundant and can be fetched from trips
               { name: 'km_per_gallon', type: 'REAL' }
             ];
 
@@ -546,13 +562,14 @@ app.get('/api/unique-car-numbers', async (req, res) => {
     const maintenanceRows = await dbAll("SELECT DISTINCT car_no FROM car_maintenance");
     maintenanceRows.forEach(row => uniqueCarNumbers.add(row.car_no));
 
-    const fuelLogsRows = await dbAll("SELECT DISTINCT car_no FROM fuel_logs"); // Corrected to fuel_logs
+    // Changed to use log_datetime for fuel_logs
+    const fuelLogsRows = await dbAll("SELECT DISTINCT car_no FROM fuel_logs");
     fuelLogsRows.forEach(row => uniqueCarNumbers.add(row.car_no));
 
     const assignmentRows = await dbAll("SELECT DISTINCT car_no FROM car_driver_assignments");
     assignmentRows.forEach(row => uniqueCarNumbers.add(row.car_no));
 
-    const fuelReadingsRows = await dbAll("SELECT DISTINCT car_no FROM fuel_readings"); // Added fuel_readings
+    const fuelReadingsRows = await dbAll("SELECT DISTINCT car_no FROM fuel_readings");
     fuelReadingsRows.forEach(row => uniqueCarNumbers.add(row.car_no));
 
 
@@ -591,32 +608,101 @@ app.post('/api/car-maintenance', async (req, res) => {
   }
 });
 
-// API endpoint to get car maintenance records for a specific car
+// API endpoint to update a car maintenance record
+app.put('/api/car-maintenance/:id', async (req, res) => {
+  const { id } = req.params;
+  const { carNo, maintenanceDate, description, cost } = req.body; // description will be the final description (e.g., "အခြား (Other)" or actual text)
+
+  if (!carNo || !maintenanceDate || !description || !cost) {
+    return res.status(400).json({ error: "Missing required car maintenance fields for update." });
+  }
+
+  try {
+    const result = await dbRun(`
+      UPDATE car_maintenance SET
+        car_no = ?,
+        maintenance_date = ?,
+        description = ?,
+        cost = ?
+      WHERE id = ?
+    `, [carNo, maintenanceDate, description, cost, id]);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ message: "Car maintenance record not found." });
+    }
+    res.json({
+      message: "Car maintenance record updated successfully",
+      id: id
+    });
+  } catch (err) {
+    console.error("Error updating car maintenance record:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API endpoint to get car maintenance records for a specific car with filters
+// Modified to include year, month, description, and otherDescription filters
 app.get('/api/car-maintenance/:carNo', async (req, res) => {
   const { carNo } = req.params;
+  const { year, month, description, otherDescription } = req.query;
+
+  let whereClauses = ['car_no = ?'];
+  let params = [carNo];
+
+  if (year) {
+    if (month) {
+      whereClauses.push("strftime('%Y-%m', maintenance_date) = ?");
+      params.push(`${year}-${String(month).padStart(2, '0')}`);
+    } else { // Filter by year only if month is not provided (or is 'All')
+      whereClauses.push("strftime('%Y', maintenance_date) = ?");
+      params.push(`${year}`);
+    }
+  }
+
+  if (description) {
+    if (description === "အခြား (Other)" && otherDescription) {
+      // If "Other" is selected and otherDescription is provided, filter by it
+      whereClauses.push('description LIKE ?');
+      params.push(`%${otherDescription}%`);
+    } else if (description !== "အခြား (Other)") {
+      // If a specific description (not "Other") is selected, filter by it
+      whereClauses.push('description = ?');
+      params.push(description);
+    }
+    // If description is "Other" but otherDescription is empty, it means "All other"
+    // which is covered by not adding a description filter.
+  }
+
+  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
   try {
-    const rows = await dbAll("SELECT * FROM car_maintenance WHERE car_no = ? ORDER BY maintenance_date DESC", [carNo]);
+    const rows = await dbAll(`SELECT * FROM car_maintenance ${whereSql} ORDER BY maintenance_date DESC`, params);
     res.json({
       message: "success",
       data: rows
     });
   } catch (err) {
+    console.error("Error fetching car maintenance records:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // API endpoint to add a new fuel log (for CarManagementPage)
+// Modified to accept log_datetime
 app.post('/api/fuel-logs', async (req, res) => {
-  const { carNo, logDate, fuelAmount, fuelCost, remarks } = req.body;
-  if (!carNo || !logDate || !fuelAmount || !fuelCost) {
-    return res.status(400).json({ error: "Missing required fuel log fields." });
+  const { carNo, logDate, logTime, fuelAmount, fuelCost, remarks } = req.body;
+  // Combine logDate and logTime into log_datetime
+  const logDatetime = `${logDate} ${logTime}`;
+
+  if (!carNo || !logDate || !logTime || fuelAmount === undefined || fuelAmount === null || fuelCost === undefined || fuelCost === null) {
+    return res.status(400).json({ error: "Missing required fuel log fields (carNo, logDate, logTime, fuelAmount, fuelCost)." });
   }
 
   try {
     const result = await dbRun(`
-      INSERT INTO fuel_logs (car_no, log_date, fuel_amount, fuel_cost, remarks)
+      INSERT INTO fuel_logs (car_no, log_datetime, fuel_amount, fuel_cost, remarks)
       VALUES (?, ?, ?, ?, ?)
-    `, [carNo, logDate, fuelAmount, fuelCost, remarks]);
+    `, [carNo, logDatetime, fuelAmount, fuelCost, remarks]);
     res.status(201).json({
       message: "Fuel log added successfully",
       id: result.id
@@ -628,10 +714,30 @@ app.post('/api/fuel-logs', async (req, res) => {
 });
 
 // API endpoint to get fuel logs for a specific car (for CarManagementPage)
+// Modified to order by log_datetime and include year/month filters
 app.get('/api/fuel-logs/:carNo', async (req, res) => {
   const { carNo } = req.params;
+  const { year, month } = req.query; // Get year and month from query parameters
+
+  let whereClauses = ['car_no = ?'];
+  let params = [carNo];
+
+  if (year) {
+    if (month) {
+      // Filter by specific month and year
+      whereClauses.push("strftime('%Y-%m', log_datetime) = ?");
+      params.push(`${year}-${String(month).padStart(2, '0')}`);
+    } else {
+      // Filter by year only
+      whereClauses.push("strftime('%Y', log_datetime) = ?");
+      params.push(`${year}`);
+    }
+  }
+
+  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
   try {
-    const rows = await dbAll("SELECT * FROM fuel_logs WHERE car_no = ? ORDER BY log_date DESC", [carNo]);
+    const rows = await dbAll(`SELECT * FROM fuel_logs ${whereSql} ORDER BY log_datetime DESC`, params);
     res.json({
       message: "success",
       data: rows
@@ -678,38 +784,31 @@ async function getCalculatedPreviousFuelReading(carNo, currentReadingDate, curre
   let calculatedPreviousReading = lastFuelGaugeReading; // Start with the last recorded gauge reading (can be null)
 
   // 2. Sum fuel_amount from fuel_logs between last_reading_datetime and current_reading_datetime
-  // If lastReadingDateTime is null, it means this is the very first fuel_reading for this car,
-  // so we sum all fuel_logs up to the current reading date/time.
+  // Now using log_datetime for more accurate time-based filtering
   let fuelLogsSumQuery;
   let fuelLogsSumParams = [carNo];
-  const currentDateTimeString = `${currentReadingDate} ${currentReadingTime}`;
+  const currentFuelReadingDateTime = `${currentReadingDate} ${currentReadingTime}`; // Full datetime string for current reading
 
   if (lastReadingDateTime) {
-    // Sum fuel_logs that occurred AFTER the last fuel_reading and BEFORE or AT the current reading
+    // Sum fuel_logs that occurred AFTER the last fuel_reading's datetime
+    // and BEFORE or AT the current fuel_reading's datetime
     fuelLogsSumQuery = `
       SELECT SUM(fuel_amount) AS total_fuel_added
       FROM fuel_logs
       WHERE car_no = ? AND
-            (log_date || ' 00:00') >= ? AND -- Start from the day of the last reading
-            (log_date || ' 23:59') <= ?     -- Up to the day of the current reading
+            log_datetime > ? AND
+            log_datetime <= ?
     `;
-    fuelLogsSumParams.push(lastReadingDateTime.split(' ')[0]); // Only date part for log_date comparison
-    fuelLogsSumParams.push(currentReadingDate);
-    // Refined logic for time comparison:
-    // We need logs that happened AFTER the last fuel_reading's exact time,
-    // and BEFORE or AT the current reading's exact time.
-    // SQLite's date/time functions are limited, so we'll filter by date range first
-    // and then handle time logic if needed (though for simplicity, assuming logs are daily for now).
-    // The previous logic for `(log_date || ' ' || '00:00') > ?` was too strict.
-    // Let's use BETWEEN for dates.
+    fuelLogsSumParams.push(lastReadingDateTime);
+    fuelLogsSumParams.push(currentFuelReadingDateTime);
   } else {
-    // If no previous fuel_reading, sum all fuel_logs up to the current reading date
+    // If no previous fuel_reading, sum all fuel_logs up to the current reading datetime
     fuelLogsSumQuery = `
       SELECT SUM(fuel_amount) AS total_fuel_added
       FROM fuel_logs
-      WHERE car_no = ? AND log_date <= ?
+      WHERE car_no = ? AND log_datetime <= ?
     `;
-    fuelLogsSumParams.push(currentReadingDate);
+    fuelLogsSumParams.push(currentFuelReadingDateTime);
   }
 
   const fuelLogsSumResult = await dbGet(fuelLogsSumQuery, fuelLogsSumParams);
@@ -724,18 +823,11 @@ async function getCalculatedPreviousFuelReading(carNo, currentReadingDate, curre
   }
 
   console.log(`[getCalculatedPreviousFuelReading] CarNo: ${carNo}, CurrentDateTime: ${currentReadingDate} ${currentReadingTime}, CurrentReadingId: ${currentReadingId}`);
-
-  // ... (existing code)
-
   console.log(`[getCalculatedPreviousFuelReading] Last Recorded Reading:`, lastRecordedReading);
   console.log(`[getCalculatedPreviousFuelReading] Last Fuel Gauge Reading: ${lastFuelGaugeReading}, Last Reading DateTime: ${lastReadingDateTime}`);
-
-  // ... (existing code)
-
   console.log(`[getCalculatedPreviousFuelReading] Fuel Logs Sum Query: ${fuelLogsSumQuery}, Params:`, fuelLogsSumParams);
   console.log(`[getCalculatedPreviousFuelReading] Total Fuel Added from Logs:`, totalFuelAdded);
   console.log(`[getCalculatedPreviousFuelReading] Final Calculated Previous Reading:`, calculatedPreviousReading);
-
 
   return {
     calculatedPreviousReading: calculatedPreviousReading
@@ -1333,7 +1425,8 @@ app.get('/api/car-maintenance-monthly/:carNo/:year/:month', async (req, res) => 
   const { carNo, year, month } = req.params;
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
   const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
-
+  
+  console.log(`[car-maintenance-monthly] CarNo: ${carNo}, Year: ${year}, Month: ${month}, StartDate: ${startDate}, EndDate: ${endDate}`);
   try {
     const row = await dbGet(
       'SELECT SUM(cost) AS total_cost FROM car_maintenance WHERE car_no = ? AND maintenance_date BETWEEN ? AND ?',
@@ -1366,14 +1459,15 @@ app.get('/api/car-maintenance-yearly/:carNo/:year', async (req, res) => {
 
 
 // API endpoint to get fuel costs for a specific car within a month (for CarManagementPage)
+// Modified to use log_datetime
 app.get('/api/fuel-logs-monthly/:carNo/:year/:month', async (req, res) => {
   const { carNo, year, month } = req.params;
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01 00:00`; // Include time for full datetime comparison
+  const endDate = `${new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0]} 23:59`; // Include time for full datetime comparison
 
   try {
     const row = await dbGet(
-      'SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_date BETWEEN ? AND ?',
+      'SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_datetime BETWEEN ? AND ?',
       [carNo, startDate, endDate]
     );
     const totalFuelCost = row ? (row.total_fuel_cost || 0) : 0;
@@ -1384,14 +1478,15 @@ app.get('/api/fuel-logs-monthly/:carNo/:year/:month', async (req, res) => {
 });
 
 // API endpoint to get fuel costs for a specific car within a year (for DriverManagementPage)
+// Modified to use log_datetime
 app.get('/api/fuel-logs-yearly/:carNo/:year', async (req, res) => {
   const { carNo, year } = req.params;
-  const startDate = `${year}-01-01`;
-  const endDate = `${year}-12-31`;
+  const startDate = `${year}-01-01 00:00`;
+  const endDate = `${year}-12-31 23:59`;
 
   try {
     const row = await dbGet(
-      'SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_date BETWEEN ? AND ?',
+      'SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_datetime BETWEEN ? AND ?',
       [carNo, startDate, endDate]
     );
     const totalFuelCost = row ? (row.total_fuel_cost || 0) : 0;
@@ -1423,12 +1518,77 @@ app.post('/api/general-expenses', async (req, res) => {
   }
 });
 
-// API endpoint to get general expenses for a specific car
-// (Optional: You might want to add pagination or date range filtering later)
+// API endpoint to update a general expense record
+app.put('/api/general-expenses/:id', async (req, res) => {
+  const { id } = req.params;
+  const { carNo, expenseDate, description, cost, remarks } = req.body; // description will be the final description
+
+  if (!carNo || !expenseDate || !description || !cost) {
+    return res.status(400).json({ error: "Missing required general expense fields for update." });
+  }
+
+  try {
+    const result = await dbRun(`
+      UPDATE general_expenses SET
+        car_no = ?,
+        expense_date = ?,
+        description = ?,
+        cost = ?,
+        remarks = ?
+      WHERE id = ?
+    `, [carNo, expenseDate, description, cost, remarks, id]);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ message: "General expense record not found." });
+    }
+    res.json({
+      message: "General expense record updated successfully",
+      id: id
+    });
+  } catch (err) {
+    console.error("Error updating general expense record:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// API endpoint to get general expenses for a specific car with filters
+// Modified to include year, month, description, and otherDescription filters
 app.get('/api/general-expenses/:carNo', async (req, res) => {
   const { carNo } = req.params;
+  const { year, month, description, otherDescription } = req.query;
+
+  let whereClauses = ['car_no = ?'];
+  let params = [carNo];
+
+  if (year) {
+    if (month) {
+      whereClauses.push("strftime('%Y-%m', expense_date) = ?");
+      params.push(`${year}-${String(month).padStart(2, '0')}`);
+    } else { // Filter by year only if month is not provided (or is 'All')
+      whereClauses.push("strftime('%Y', expense_date) = ?");
+      params.push(`${year}`);
+    }
+  }
+
+  if (description) {
+    if (description === "အခြား (Other)" && otherDescription) {
+      // If "Other" is selected and otherDescription is provided, filter by it
+      whereClauses.push('description LIKE ?');
+      params.push(`%${otherDescription}%`);
+    } else if (description !== "အခြား (Other)") {
+      // If a specific description (not "Other") is selected, filter by it
+      whereClauses.push('description = ?');
+      params.push(description);
+    }
+    // If description is "Other" but otherDescription is empty, it means "All other"
+    // which is covered by not adding a description filter.
+  }
+
+  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
   try {
-    const rows = await dbAll("SELECT * FROM general_expenses WHERE car_no = ? ORDER BY expense_date DESC", [carNo]);
+    const rows = await dbAll(`SELECT * FROM general_expenses ${whereSql} ORDER BY expense_date DESC`, params);
     res.json({
       message: "success",
       data: rows
@@ -1439,42 +1599,6 @@ app.get('/api/general-expenses/:carNo', async (req, res) => {
   }
 });
 
-
-// API endpoint to get general expenses for a specific car within a month
-app.get('/api/general-expenses-monthly/:carNo/:year/:month', async (req, res) => {
-  const { carNo, year, month } = req.params;
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
-
-  try {
-    const row = await dbGet(
-      'SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?',
-      [carNo, startDate, endDate]
-    );
-    const totalGeneralCost = row ? (row.total_general_cost || 0) : 0;
-    res.json({ message: "success", total_general_cost: totalGeneralCost });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// API endpoint to get general expenses for a specific car within a year
-app.get('/api/general-expenses-yearly/:carNo/:year', async (req, res) => {
-  const { carNo, year } = req.params;
-  const startDate = `${year}-01-01`;
-  const endDate = `${year}-12-31`;
-
-  try {
-    const row = await dbGet(
-      'SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?',
-      [carNo, startDate, endDate]
-    );
-    const totalGeneralCost = row ? (row.total_general_cost || 0) : 0;
-    res.json({ message: "success", total_general_cost: totalGeneralCost });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // API endpoint for data backup
 app.get('/api/backup', async (req, res) => {
