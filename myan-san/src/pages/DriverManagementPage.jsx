@@ -93,9 +93,9 @@ function DriverManagementPage() {
         { value: 12, label: 'ဒီဇင်ဘာ' },
     ], []);
 
-    // ယာဉ်မောင်းတာဝန်ပေးအပ်မှု မှတ်တမ်းအတွက် State
-    const [driverAssignmentHistory, setDriverAssignmentHistory] = useState([]);
-    const [selectedDriverForAssignmentHistory, setSelectedDriverForAssignmentHistory] = useState('');
+    // ကား တာဝန်ပေးအပ်မှု မှတ်တမ်းအတွက် State (အသစ်ပြောင်းလဲထားသည်)
+    const [carAssignmentHistory, setCarAssignmentHistory] = useState([]);
+    const [selectedCarForAssignmentHistory, setSelectedCarForAssignmentHistory] = useState(''); // ယာဉ်မောင်း ID အစား ကားနံပါတ်
     // const [showAssignmentHistory, setShowAssignmentHistory] = useState(false); // မလိုအပ်တော့ပါ
 
     // ယာဉ်မောင်းလစာအပြောင်းအလဲ မှတ်တမ်းအတွက် State
@@ -122,9 +122,7 @@ function DriverManagementPage() {
                 setSelectedDriverForIncome(''); // Default to 'All Drivers'
             }
             // မှတ်တမ်းများအတွက် ပထမဆုံး ယာဉ်မောင်းကို default ရွေးချယ်ထားခြင်း
-            if (response.data.data.length > 0 && !selectedDriverForAssignmentHistory) {
-                setSelectedDriverForAssignmentHistory(response.data.data[0]?.id || ''); // Optional chaining ဖြင့် safe ဖြစ်စေရန်
-            }
+            // ကားချိတ်ဆက်မှု မှတ်တမ်းအတွက် ကားနံပါတ်ကို fetchCarNumbers ပြီးမှ သတ်မှတ်ပါမည်။
             if (response.data.data.length > 0 && !selectedDriverForSalaryHistory) {
                 setSelectedDriverForSalaryHistory(response.data.data[0]?.id || ''); // Optional chaining ဖြင့် safe ဖြစ်စေရန်
             }
@@ -134,7 +132,7 @@ function DriverManagementPage() {
         } finally {
             setLoading(false);
         }
-    }, [selectedDriverForIncome, selectedDriverForAssignmentHistory, selectedDriverForSalaryHistory]);
+    }, [selectedDriverForIncome, selectedDriverForSalaryHistory]);
 
     // ထူးခြားသည့် ကားနံပါတ်များအားလုံးကို Backend မှ ရယူခြင်း
     const fetchCarNumbers = useCallback(async () => {
@@ -147,7 +145,14 @@ function DriverManagementPage() {
             carNumbersData.forEach(car => allCarNumbersSet.add(car.number)); // Static JSON မှ ထည့်သွင်း
             backendCarNumbers.forEach(car => allCarNumbersSet.add(car)); // Backend (DB) မှ ထည့်သွင်း
 
-            setCarNumbers(Array.from(allCarNumbersSet).sort()); // Unique ဖြစ်အောင်လုပ်ပြီး sort လုပ်၍ သတ်မှတ်
+            const sortedCarNumbers = Array.from(allCarNumbersSet).sort();
+            setCarNumbers(sortedCarNumbers);
+            
+            // ကားချိတ်ဆက်မှု မှတ်တမ်းအတွက် ပထမဆုံး ကားနံပါတ်ကို default ရွေးချယ်ထားခြင်း
+            if (sortedCarNumbers.length > 0 && !selectedCarForAssignmentHistory) {
+                setSelectedCarForAssignmentHistory(sortedCarNumbers[0]);
+            }
+
         } catch (err) {
             setError('ကားနံပါတ်များကို ရယူရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။');
             console.error('ထူးခြားသည့် ကားနံပါတ်များရယူရာတွင် အမှား:', err);
@@ -156,7 +161,7 @@ function DriverManagementPage() {
             carNumbersData.forEach(car => allCarNumbersSet.add(car.number));
             setCarNumbers(Array.from(allCarNumbersSet).sort());
         }
-    }, []);
+    }, [selectedCarForAssignmentHistory]);
 
     // ကားချိတ်ဆက်မှုများကို Backend မှ ရယူခြင်း
     const fetchCarAssignments = useCallback(async () => {
@@ -250,15 +255,15 @@ function DriverManagementPage() {
         setMonthlyIncomeData(newMonthlyIncomeData);
     }, [drivers, carAssignments, selectedYear, selectedMonth, selectedDriverForIncome, months]);
 
-    // သတ်မှတ်ထားသော ယာဉ်မောင်းအတွက် တာဝန်ပေးအပ်မှု မှတ်တမ်းကို ရယူခြင်း
-    const fetchDriverAssignmentHistory = useCallback(async (driverId) => {
+    // သတ်မှတ်ထားသော ကားအတွက် တာဝန်ပေးအပ်မှု မှတ်တမ်းကို ရယူခြင်း (အသစ်ပြောင်းလဲထားသည်)
+    const fetchCarAssignmentHistory = useCallback(async (carNo) => {
         try {
-            const response = await axios.get(`${API_BASE_URL}/car-driver-assignments/history/by-driver/${driverId}`);
-            setDriverAssignmentHistory(response.data.data);
+            const response = await axios.get(`${API_BASE_URL}/car-driver-assignments/history/${carNo}`);
+            setCarAssignmentHistory(response.data.data);
         } catch (err) {
-            setError('ယာဉ်မောင်းတာဝန်ပေးအပ်မှု မှတ်တမ်းကို ရယူရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။');
-            console.error('ယာဉ်မောင်းတာဝန်ပေးအပ်မှု မှတ်တမ်းရယူရာတွင် အမှား:', err);
-            setDriverAssignmentHistory([]); // အမှားဖြစ်ပါက ယခင် data များကို ရှင်းလင်း
+            setError('ကားတာဝန်ပေးအပ်မှု မှတ်တမ်းကို ရယူရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။');
+            console.error('ကားတာဝန်ပေးအပ်မှု မှတ်တမ်းရယူရာတွင် အမှား:', err);
+            setCarAssignmentHistory([]); // အမှားဖြစ်ပါက ယခင် data များကို ရှင်းလင်း
         }
     }, []);
 
@@ -277,7 +282,7 @@ function DriverManagementPage() {
     // Initial Data Fetching (Component Mount လုပ်သောအခါ)
     useEffect(() => {
         fetchDrivers();
-        fetchCarNumbers();
+        fetchCarNumbers(); // fetchCarNumbers ကို အရင်ခေါ်ပါ
         fetchCarAssignments();
     }, [fetchDrivers, fetchCarNumbers, fetchCarAssignments]);
 
@@ -288,12 +293,12 @@ function DriverManagementPage() {
         }
     }, [drivers, carAssignments, selectedYear, selectedMonth, selectedDriverForIncome, fetchMonthlyIncome]);
 
-    // တာဝန်ပေးအပ်မှု မှတ်တမ်းကို ရွေးချယ်ထားသော ယာဉ်မောင်းပြောင်းလဲခြင်း သို့မဟုတ် Tab ပြောင်းလဲသောအခါ ရယူခြင်း
+    // ကား တာဝန်ပေးအပ်မှု မှတ်တမ်းကို ရွေးချယ်ထားသော ကားနံပါတ်ပြောင်းလဲခြင်း သို့မဟုတ် Tab ပြောင်းလဲသောအခါ ရယူခြင်း (အသစ်ပြောင်းလဲထားသည်)
     useEffect(() => {
-        if (activeTab === 'assignmentHistory' && selectedDriverForAssignmentHistory) {
-            fetchDriverAssignmentHistory(selectedDriverForAssignmentHistory);
+        if (activeTab === 'assignmentHistory' && selectedCarForAssignmentHistory) {
+            fetchCarAssignmentHistory(selectedCarForAssignmentHistory);
         }
-    }, [activeTab, selectedDriverForAssignmentHistory, fetchDriverAssignmentHistory]);
+    }, [activeTab, selectedCarForAssignmentHistory, fetchCarAssignmentHistory]);
 
     // လစာမှတ်တမ်းကို ရွေးချယ်ထားသော ယာဉ်မောင်းပြောင်းလဲခြင်း သို့မဟုတ် Tab ပြောင်းလဲသောအခါ ရယူခြင်း
     useEffect(() => {
@@ -352,6 +357,7 @@ function DriverManagementPage() {
 
             fetchDrivers(); // ယာဉ်မောင်းစာရင်းကို ပြန်လည်ရယူခြင်း
             fetchCarAssignments(); // ကားချိတ်ဆက်မှုများကို ပြန်လည်ရယူခြင်း
+            fetchCarNumbers(); // ကားနံပါတ်စာရင်းကို ပြန်လည်ရယူခြင်း (အသစ်ထည့်သွင်းထားသည်)
         } catch (err) {
             if (err.response) {
                 if (err.response.status === 409) {
@@ -458,6 +464,7 @@ function DriverManagementPage() {
             setAssignedDate(new Date().toISOString().split('T')[0]); 
             fetchDrivers(); // ယာဉ်မောင်းစာရင်းကို ပြန်လည်ရယူခြင်း
             fetchCarAssignments(); // ကားချိတ်ဆက်မှုများကို ပြန်လည်ရယူခြင်း
+            fetchCarNumbers(); // ကားနံပါတ်စာရင်းကို ပြန်လည်ရယူခြင်း (အသစ်ထည့်သွင်းထားသည်)
         } catch (err) {
             if (err.response) {
                 if (err.response.status === 409) {
@@ -498,6 +505,7 @@ function DriverManagementPage() {
             setSuccessMessage('ယာဉ်မောင်းကို ဖျက်ပစ်ပြီးပါပြီ။');
             fetchDrivers(); // ယာဉ်မောင်းစာရင်းကို ပြန်လည်ရယူခြင်း
             fetchCarAssignments(); // ကားချိတ်ဆက်မှုများကို ပြန်လည်ရယူခြင်း (backend logic အရ ချိတ်ဆက်မှုများပါ ဖျက်ပေးမည်)
+            fetchCarNumbers(); // ကားနံပါတ်စာရင်းကို ပြန်လည်ရယူခြင်း (အသစ်ထည့်သွင်းထားသည်)
         } catch (err) {
             setError('ယာဉ်မောင်းကို ဖျက်ပစ်ရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။');
             console.error('ယာဉ်မောင်းဖျက်ရာတွင် အမှား:', err);
@@ -629,7 +637,7 @@ function DriverManagementPage() {
                     onClick={() => setActiveTab('assignmentHistory')}
                     sx={{ mr: 1, textTransform: 'none' }}
                 >
-                    ယာဉ်မောင်း တာဝန်ပေးအပ်မှု မှတ်တမ်း
+                    ကား တာဝန်ပေးအပ်မှု မှတ်တမ်း
                 </Button>
                 <Button
                     variant={activeTab === 'salaryHistory' ? 'contained' : 'text'}
@@ -934,49 +942,49 @@ function DriverManagementPage() {
                 </Paper>
             )}
 
-            {/* Tab Content - ယာဉ်မောင်း တာဝန်ပေးအပ်မှု မှတ်တမ်း */}
+            {/* Tab Content - ကား တာဝန်ပေးအပ်မှု မှတ်တမ်း (အသစ်ပြောင်းလဲထားသည်) */}
             {activeTab === 'assignmentHistory' && (
                 <Paper elevation={3} sx={{ p: 4, mt: 2 }}>
                     <Typography variant="h5" gutterBottom>
-                        ယာဉ်မောင်း တာဝန်ပေးအပ်မှု မှတ်တမ်း
+                        ကား တာဝန်ပေးအပ်မှု မှတ်တမ်း
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 2, mb: 3, flexDirection: { xs: 'column', sm: 'row' } }}>
                         <FormControl fullWidth>
-                            <InputLabel>ယာဉ်မောင်း ရွေးချယ်ပါ</InputLabel>
+                            <InputLabel>ကားနံပါတ် ရွေးချယ်ပါ</InputLabel>
                             <Select
-                                value={selectedDriverForAssignmentHistory}
-                                label="ယာဉ်မောင်း ရွေးချယ်ပါ"
-                                onChange={(e) => setSelectedDriverForAssignmentHistory(e.target.value)}
+                                value={selectedCarForAssignmentHistory}
+                                label="ကားနံပါတ် ရွေးချယ်ပါ"
+                                onChange={(e) => setSelectedCarForAssignmentHistory(e.target.value)}
                             >
-                                {drivers.map((driver) => (
-                                    <MenuItem key={driver.id} value={driver.id}>{driver.name}</MenuItem>
+                                {availableCarNumbers.map((carNo) => (
+                                    <MenuItem key={carNo} value={carNo}>{carNo}</MenuItem>
                                 ))}
                             </Select>
                         </FormControl>
                     </Box>
 
-                    {selectedDriverForAssignmentHistory && (
+                    {selectedCarForAssignmentHistory && (
                         <TableContainer component={Paper}>
                             <Table>
                                 <TableHead>
                                     <TableRow sx={{ backgroundColor: '#e0e0e0' }}>
-                                        <TableCell sx={{ fontWeight: 'bold' }}>ကားနံပါတ်</TableCell>
+                                        <TableCell sx={{ fontWeight: 'bold' }}>ယာဉ်မောင်းအမည်</TableCell>
                                         <TableCell sx={{ fontWeight: 'bold' }}>တာဝန်စတင်ရက်</TableCell>
                                         <TableCell sx={{ fontWeight: 'bold' }}>တာဝန်ပြီးဆုံးရက်</TableCell>
                                         <TableCell sx={{ fontWeight: 'bold' }}>အခြေအနေ</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {driverAssignmentHistory.length === 0 ? (
+                                    {carAssignmentHistory.length === 0 ? (
                                         <TableRow>
                                             <TableCell colSpan={4} align="center">
-                                                ဤယာဉ်မောင်းအတွက် တာဝန်ပေးအပ်မှု မှတ်တမ်းများ မရှိသေးပါ။
+                                                ဤကားအတွက် တာဝန်ပေးအပ်မှု မှတ်တမ်းများ မရှိသေးပါ။
                                             </TableCell>
                                         </TableRow>
                                     ) : (
-                                        driverAssignmentHistory.map((assignment) => (
+                                        carAssignmentHistory.map((assignment) => (
                                             <TableRow key={assignment.id}>
-                                                <TableCell>{assignment.car_no}</TableCell>
+                                                <TableCell>{assignment.driver_name}</TableCell>
                                                 <TableCell>{assignment.assigned_date}</TableCell>
                                                 <TableCell>{assignment.end_date || 'လက်ရှိ'}</TableCell>
                                                 <TableCell>{assignment.end_date ? 'ပြီးဆုံး' : 'လက်ရှိ တာဝန်ယူဆဲ'}</TableCell>

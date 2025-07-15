@@ -316,15 +316,16 @@ const db = new sqlite3.Database(dbPath, (err) => {
       // Removed UNIQUE(car_no) and added UNIQUE(car_no, assigned_date)
       db.run(`
         CREATE TABLE IF NOT EXISTS car_driver_assignments (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          car_no TEXT NOT NULL,
-          driver_name TEXT NOT NULL,
-          assigned_date TEXT NOT NULL,
-          end_date TEXT, -- New column for end date of assignment (null if current)
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE,
-          UNIQUE (car_no, assigned_date) -- Ensure unique assignment for a car on a given date
-        )
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_no TEXT NOT NULL,
+        driver_name TEXT NOT NULL,
+        assigned_date TEXT NOT NULL,
+        end_date TEXT, -- New column for end date of assignment (null if current)
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE
+        -- UNIQUE (car_no, assigned_date) -- This constraint was causing the issue and has been removed.
+      );
+
       `, (err) => {
         if (err) console.error("Error creating car_driver_assignments table:", err.message);
         else {
@@ -1393,7 +1394,7 @@ app.post('/api/driver-salary-history', async (req, res) => {
       return res.status(400).json({ error: "Salary amount must be a valid non-negative number." });
     }
   } else {
-      return res.status(400).json({ error: "Salary amount is required." });
+    return res.status(400).json({ error: "Salary amount is required." });
   }
 
   try {
@@ -1717,7 +1718,7 @@ app.get('/api/car-maintenance-monthly/:carNo/:year/:month', async (req, res) => 
   const { carNo, year, month } = req.params;
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
   const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
-  
+
   console.log(`[car-maintenance-monthly] CarNo: ${carNo}, Year: ${year}, Month: ${month}, StartDate: ${startDate}, EndDate: ${endDate}`);
   try {
     const row = await dbGet(
@@ -1805,7 +1806,7 @@ app.post('/api/general-expenses', async (req, res) => {
       id: result.id
     });
   } catch (err) {
-      console.error("Error inserting general expense record:", err.message);
+    console.error("Error inserting general expense record:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
