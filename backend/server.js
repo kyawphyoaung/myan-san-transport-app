@@ -3,6 +3,7 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs'); // For reading static JSON file if needed, though we'll primarily use DB
 
 const app = express();
 const PORT = 5001; // သင်ပြောင်းလဲထားသော Port နံပါတ်ကို သေချာစစ်ဆေးပါ။
@@ -19,7 +20,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
   } else {
     console.log('Connected to the SQLite database.');
     // Enable foreign key constraints
-    db.run("PRAGMA foreign_keys = ON;", (pragmaErr) => {
+    db.run("PRAGMA foreign_keys = ON; ", (pragmaErr) => {
       if (pragmaErr) {
         console.error("Error enabling foreign keys:", pragmaErr.message);
       } else {
@@ -245,87 +246,85 @@ const db = new sqlite3.Database(dbPath, (err) => {
       });
 
       // Route Charges Versioning Table
+      // UPDATED: Added version_number and end_date columns. Removed UNIQUE(effective_date) if it existed.
       db.run(`
         CREATE TABLE IF NOT EXISTS route_charges_versions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           effective_date TEXT NOT NULL, -- YYYY-MM-DD format
-          route_data TEXT NOT NULL, -- JSON string of the routeCharges array
+          end_date TEXT,                -- YYYY-MM-DD format (NULL if currently active)
+          version_number TEXT,          -- e.g., '1.0', '2.0'
+          route_data TEXT NOT NULL,     -- JSON string of the routeCharges array
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `, (err) => {
         if (err) console.error("Error creating route_charges_versions table:", err.message);
-        else console.log("Route_charges_versions table created or already exists.");
+        else {
+          console.log("Route_charges_versions table created or already exists.");
 
-        // Initial insert of route charges from the static JSON data
-        // This assumes src/data/routeCharges.json is the initial version
-        try {
-          const initialRouteCharges = require(path.resolve(__dirname, '../myan-san/src/data/routeCharges.json'));
-          console.log("Successfully loaded initial route charges from JSON."); // Add this log
-          const initialRouteData = JSON.stringify(initialRouteCharges);
-          const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-
-          // Check if ANY route charges exist in the table. If not, insert the initial data.
-          // This is more robust for a fresh database setup.
-          db.get(`SELECT COUNT(*) AS count FROM route_charges_versions`, [], (err, row) => {
+          // Add new columns if they don't exist (for existing databases)
+          db.all(`PRAGMA table_info(route_charges_versions)`, (err, columns) => {
             if (err) {
-              console.error("Error checking route charges versions table count:", err.message);
+              console.error("Error checking table info for route_charges_versions:", err.message);
               return;
             }
-            if (row.count === 0) { // If table is completely empty, insert
-              db.run(`INSERT INTO route_charges_versions (effective_date, route_data) VALUES (?, ?)`,
-                [today, initialRouteData],
-                function (err) {
-                  if (err) {
-                    console.error("Error inserting initial route charges version (empty table):", err.message);
-                  } else {
-                    console.log(`Initial route charges version inserted into empty table with ID: ${this.lastID}`);
-                  }
-                }
-              );
-            } else {
-              // If table is not empty, check if today's version exists
-              db.get(`SELECT COUNT(*) AS count FROM route_charges_versions WHERE effective_date = ?`, [today], (err, rowToday) => {
-                if (err) {
-                  console.error("Error checking today's route charges version:", err.message);
-                  return;
-                }
-                if (rowToday.count === 0) { // If today's version doesn't exist, insert it
-                  db.run(`INSERT INTO route_charges_versions (effective_date, route_data) VALUES (?, ?)`,
-                    [today, initialRouteData],
+            const existingColumnNames = new Set(columns.map(col => col.name));
+            if (!existingColumnNames.has('version_number')) {
+              db.run(`ALTER TABLE route_charges_versions ADD COLUMN version_number TEXT`, (alterErr) => {
+                if (alterErr) console.error("Error adding version_number column to route_charges_versions:", alterErr.message);
+                else console.log("Added version_number column to route_charges_versions table.");
+              });
+            }
+            if (!existingColumnNames.has('end_date')) {
+              db.run(`ALTER TABLE route_charges_versions ADD COLUMN end_date TEXT`, (alterErr) => {
+                if (alterErr) console.error("Error adding end_date column to route_charges_versions:", alterErr.message);
+                else console.log("Added end_date column to route_charges_versions table.");
+              });
+            }
+            // Check if there's any data, if not, insert initial from static JSON
+            db.get(`SELECT COUNT(*) AS count FROM route_charges_versions`, [], (err, row) => {
+              if (err) {
+                console.error("Error checking route charges versions table count:", err.message);
+                return;
+              }
+              if (row.count === 0) { // If table is completely empty, insert initial data
+                try {
+                  const initialRouteCharges = require(path.resolve(__dirname, '../myan-san/src/data/routeCharges.json'));
+                  const initialRouteData = JSON.stringify(initialRouteCharges);
+                  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+                  db.run(`INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data) VALUES (?, ?, ?, ?)`,
+                    [today, null, '1.0', initialRouteData], // Initial version is 1.0, active (end_date NULL)
                     function (err) {
                       if (err) {
-                        console.error("Error inserting today's route charges version:", err.message);
+                        console.error("Error inserting initial route charges version:", err.message);
                       } else {
-                        console.log(`Today's route charges version inserted with ID: ${this.lastID}`);
+                        console.log(`Initial route charges version inserted with ID: ${this.lastID} and Version: 1.0`);
                       }
                     }
                   );
-                } else {
-                  console.log(`Route charges version for ${today} already exists.`);
+                } catch (e) {
+                  console.error("Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:", e.message);
                 }
-              });
-            }
+              }
+            });
           });
-        } catch (e) {
-          console.error("Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:", e.message); // Improved error log
         }
       });
 
+
       // Car Driver Assignments Table
-      // Modified to include end_date for historical tracking
-      // Removed UNIQUE(car_no) and added UNIQUE(car_no, assigned_date)
+      // UPDATED: Removed UNIQUE(car_no, assigned_date) as requested.
       db.run(`
         CREATE TABLE IF NOT EXISTS car_driver_assignments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        car_no TEXT NOT NULL,
-        driver_name TEXT NOT NULL,
-        assigned_date TEXT NOT NULL,
-        end_date TEXT, -- New column for end date of assignment (null if current)
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE
-        -- UNIQUE (car_no, assigned_date) -- This constraint was causing the issue and has been removed.
-      );
-
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          car_no TEXT NOT NULL,
+          driver_name TEXT NOT NULL,
+          assigned_date TEXT NOT NULL,
+          end_date TEXT, -- New column for end date of assignment (null if current)
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE
+          -- Removed UNIQUE (car_no, assigned_date)
+        )
       `, (err) => {
         if (err) console.error("Error creating car_driver_assignments table:", err.message);
         else {
@@ -343,9 +342,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 else console.log("Added end_date column to car_driver_assignments table.");
               });
             }
-            // Note: Altering UNIQUE constraints directly in SQLite is tricky.
-            // If the database already exists with UNIQUE(car_no), it might need manual intervention.
-            // For a fresh database (as per user's request), this CREATE TABLE IF NOT EXISTS is sufficient.
           });
         }
       });
@@ -555,10 +551,11 @@ app.delete('/api/trips/:id', async (req, res) => {
 });
 
 
-// API endpoint to get the latest route charges version
+// API endpoint to get the latest route charges version (now gets the active one)
 app.get('/api/route-charges', async (req, res) => {
   try {
-    const row = await dbGet(`SELECT route_data FROM route_charges_versions ORDER BY effective_date DESC, created_at DESC LIMIT 1`);
+    // This now fetches the *active* version, which has end_date IS NULL
+    const row = await dbGet(`SELECT route_data FROM route_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`);
     if (row) {
       try {
         const routeCharges = JSON.parse(row.route_data);
@@ -570,12 +567,299 @@ app.get('/api/route-charges', async (req, res) => {
         res.status(500).json({ error: "Failed to parse route charges data." });
       }
     } else {
-      res.status(404).json({ message: "No route charges data found." });
+      res.status(404).json({ message: "No active route charges data found." });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+// NEW API: Get the current active route charges version with full details
+app.get('/api/route-charges/active', async (req, res) => {
+  try {
+    const row = await dbGet(`
+      SELECT id, effective_date, version_number, route_data
+      FROM route_charges_versions
+      WHERE end_date IS NULL
+      ORDER BY effective_date DESC, created_at DESC
+      LIMIT 1
+    `);
+    if (row) {
+      try {
+        const routeCharges = JSON.parse(row.route_data);
+        res.json({
+          message: "success",
+          data: {
+            id: row.id,
+            effectiveDate: row.effective_date,
+            versionNumber: row.version_number,
+            routeCharges: routeCharges
+          }
+        });
+      } catch (parseErr) {
+        res.status(500).json({ error: "Failed to parse route charges data from active version." });
+      }
+    } else {
+      res.status(404).json({ message: "No active route charges version found." });
+    }
+  } catch (err) {
+    console.error("Error fetching active route charges version:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Create a new route charges version
+app.post('/api/route-charges/new-version', async (req, res) => {
+  const { effectiveDate, routeData } = req.body;
+
+  if (!effectiveDate || !routeData) {
+    return res.status(400).json({ error: "Effective date and route data are required." });
+  }
+
+  let parsedRouteData;
+  try {
+    parsedRouteData = JSON.parse(routeData);
+    if (!Array.isArray(parsedRouteData)) {
+      return res.status(400).json({ error: "Route data must be a JSON array string." });
+    }
+  } catch (parseErr) {
+    return res.status(400).json({ error: "Invalid route data format. Must be a valid JSON string." });
+  }
+
+  try {
+    // Start a transaction for atomicity
+    await dbRun('BEGIN TRANSACTION');
+
+    // 1. Find any existing active route charges version (end_date IS NULL)
+    const existingActiveVersion = await dbGet(
+      `SELECT id, effective_date, version_number FROM route_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
+    );
+
+    let newVersionNumber = '1.0'; // Default for the very first version
+
+    // 2. If an active version exists, update its end_date and determine new version number
+    if (existingActiveVersion) {
+      // Validate new effectiveDate against existing active version's effective_date
+      if (effectiveDate <= existingActiveVersion.effective_date) {
+        await dbRun('ROLLBACK'); // Rollback transaction on error
+        return res.status(400).json({
+          error: `New effective date (${effectiveDate}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+        });
+      }
+
+      // Calculate end date for the old version (one day before new effectiveDate)
+      const oldEndDate = new Date(effectiveDate);
+      oldEndDate.setDate(oldEndDate.getDate() - 1);
+      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+
+      await dbRun(
+        `UPDATE route_charges_versions SET end_date = ? WHERE id = ?`,
+        [formattedOldEndDate, existingActiveVersion.id]
+      );
+      console.log(`Ended previous route charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+
+      // Increment version number (assuming X.0 format for simplicity for now)
+      if (existingActiveVersion.version_number) {
+        const currentMajorVersion = parseInt(existingActiveVersion.version_number.split('.')[0]);
+        newVersionNumber = `${currentMajorVersion + 1}.0`;
+      }
+    }
+
+    // 3. Insert the new route charges version
+    const result = await dbRun(
+      `INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data)
+       VALUES (?, ?, ?, ?)`,
+      [effectiveDate, null, newVersionNumber, routeData] // New version is active (end_date NULL)
+    );
+
+    await dbRun('COMMIT'); // Commit the transaction
+    res.status(201).json({
+      message: "New route charges version added successfully",
+      id: result.id,
+      versionNumber: newVersionNumber
+    });
+
+  } catch (err) {
+    await dbRun('ROLLBACK'); // Rollback transaction on error
+    console.error("Error adding new route charges version:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Get all historical route charges versions
+app.get('/api/route-charges/history', async (req, res) => {
+  try {
+    const rows = await dbAll(`
+      SELECT id, effective_date, end_date, version_number, created_at, route_data
+      FROM route_charges_versions
+      ORDER BY effective_date DESC, created_at DESC
+    `);
+    // Parse route_data for each row before sending
+    const historyData = rows.map(row => ({
+      ...row,
+      route_data: JSON.parse(row.route_data) // Parse JSON string back to object
+    }));
+    res.json({
+      message: "success",
+      data: historyData
+    });
+  } catch (err) {
+    console.error("Error fetching route charges history:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Update effective_date and end_date of a specific route charges version
+app.put('/api/route-charges-versions/:id', async (req, res) => {
+  const { id } = req.params;
+  const { effectiveDate, endDate } = req.body; // endDate can be null
+
+  if (!effectiveDate) {
+    return res.status(400).json({ error: "Effective date is required for update." });
+  }
+
+  try {
+    await dbRun('BEGIN TRANSACTION');
+
+    // Get the version being updated
+    const existingVersion = await dbGet(`SELECT * FROM route_charges_versions WHERE id = ?`, [id]);
+    if (!existingVersion) {
+      await dbRun('ROLLBACK');
+      return res.status(404).json({ message: "Route charges version not found." });
+    }
+
+    // Validate dates: effectiveDate must be before endDate (if endDate is not null)
+    if (endDate && effectiveDate > endDate) {
+      await dbRun('ROLLBACK');
+      return res.status(400).json({ error: "Effective date cannot be after end date." });
+    }
+
+    // Advanced validation for overlaps/gaps:
+    // 1. Check for overlaps with previous version
+    const prevVersion = await dbGet(`
+      SELECT id, effective_date, end_date FROM route_charges_versions
+      WHERE effective_date < ? AND id != ?
+      ORDER BY effective_date DESC, created_at DESC LIMIT 1
+    `, [effectiveDate, id]);
+
+    if (prevVersion && prevVersion.end_date && effectiveDate <= prevVersion.end_date) {
+      await dbRun('ROLLBACK');
+      return res.status(400).json({ error: `New effective date (${effectiveDate}) overlaps with previous version (ends ${prevVersion.end_date}).` });
+    }
+
+    // 2. Check for overlaps with next version
+    const nextVersion = await dbGet(`
+      SELECT id, effective_date, end_date FROM route_charges_versions
+      WHERE effective_date > ? AND id != ?
+      ORDER BY effective_date ASC, created_at ASC LIMIT 1
+    `, [endDate || '9999-12-31', id]); // If endDate is null, treat as very far future
+
+    if (nextVersion && endDate && endDate >= nextVersion.effective_date) {
+      await dbRun('ROLLBACK');
+      return res.status(400).json({ error: `New end date (${endDate}) overlaps with next version (starts ${nextVersion.effective_date}).` });
+    }
+    // If next version exists and its effective_date is before current effectiveDate, but current end_date is null
+    if (nextVersion && !endDate && nextVersion.effective_date <= effectiveDate) {
+        await dbRun('ROLLBACK');
+        return res.status(400).json({ error: `Cannot set this version as active, it overlaps with a future version starting ${nextVersion.effective_date}. Please set an end date for this version.` });
+    }
+
+
+    const result = await dbRun(`
+      UPDATE route_charges_versions SET
+        effective_date = ?,
+        end_date = ?,
+        created_at = CURRENT_TIMESTAMP -- Update timestamp to reflect modification
+      WHERE id = ?
+    `, [effectiveDate, endDate, id]);
+
+    if (result.changes === 0) {
+      await dbRun('ROLLBACK');
+      return res.status(404).json({ message: "Route charges version not found or no changes made." });
+    }
+
+    await dbRun('COMMIT');
+    res.json({
+      message: "Route charges version dates updated successfully",
+      id: id
+    });
+  } catch (err) {
+    await dbRun('ROLLBACK');
+    console.error("Error updating route charges version dates:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// NEW API: Activate a historical route charges version (creates a new active record)
+app.post('/api/route-charges/activate-version', async (req, res) => {
+  const { versionIdToActivate, newEffectiveDateForActivation } = req.body;
+
+  if (!versionIdToActivate || !newEffectiveDateForActivation) {
+    return res.status(400).json({ error: "Version ID to activate and new effective date are required." });
+  }
+
+  try {
+    await dbRun('BEGIN TRANSACTION');
+
+    // 1. Get the historical version data to be activated
+    const historicalVersion = await dbGet(`SELECT route_data, version_number FROM route_charges_versions WHERE id = ?`, [versionIdToActivate]);
+    if (!historicalVersion) {
+      await dbRun('ROLLBACK');
+      return res.status(404).json({ message: "Historical version not found." });
+    }
+
+    // 2. Find and end any current active version
+    const existingActiveVersion = await dbGet(
+      `SELECT id, effective_date FROM route_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
+    );
+
+    if (existingActiveVersion) {
+      // Validate newEffectiveDateForActivation against existing active version's effective_date
+      if (newEffectiveDateForActivation <= existingActiveVersion.effective_date) {
+        await dbRun('ROLLBACK');
+        return res.status(400).json({
+          error: `New activation date (${newEffectiveDateForActivation}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+        });
+      }
+
+      const oldEndDate = new Date(newEffectiveDateForActivation);
+      oldEndDate.setDate(oldEndDate.getDate() - 1);
+      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+
+      await dbRun(
+        `UPDATE route_charges_versions SET end_date = ? WHERE id = ?`,
+        [formattedOldEndDate, existingActiveVersion.id]
+      );
+      console.log(`Ended previous active version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+    }
+
+    // 3. Determine the new version number
+    const maxVersionRow = await dbGet(`SELECT MAX(CAST(SUBSTR(version_number, 1, INSTR(version_number, '.') - 1) AS INTEGER)) AS max_major_version FROM route_charges_versions`);
+    const maxMajorVersion = maxVersionRow && maxVersionRow.max_major_version ? maxVersionRow.max_major_version : 0;
+    const newVersionNumber = `${maxMajorVersion + 1}.0`;
+
+    // 4. Insert the new active version based on the historical data
+    const result = await dbRun(
+      `INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data)
+       VALUES (?, ?, ?, ?)`,
+      [newEffectiveDateForActivation, null, newVersionNumber, historicalVersion.route_data]
+    );
+
+    await dbRun('COMMIT');
+    res.status(201).json({
+      message: `Version ${historicalVersion.version_number} activated as new version ${newVersionNumber} successfully.`,
+      id: result.id,
+      versionNumber: newVersionNumber
+    });
+
+  } catch (err) {
+    await dbRun('ROLLBACK');
+    console.error("Error activating historical route charges version:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // API endpoint to get all settings
 app.get('/api/settings', async (req, res) => {
@@ -766,11 +1050,9 @@ app.get('/api/fuel-logs/:carNo', async (req, res) => {
 
   if (year) {
     if (month) {
-      // Filter by specific month and year
       whereClauses.push("strftime('%Y-%m', log_datetime) = ?");
       params.push(`${year}-${String(month).padStart(2, '0')}`);
     } else {
-      // Filter by year only
       whereClauses.push("strftime('%Y', log_datetime) = ?");
       params.push(`${year}`);
     }

@@ -4,9 +4,10 @@ import DashboardLayout from './components/DashboardLayout';
 import HomePage from './pages/HomePage';
 import CarManagementPage from './pages/CarManagementPage';
 import DriverManagementPage from './pages/DriverManagementPage';
-import AllTripsPage from './pages/AllTripsPage'; // Make sure this is imported if you have it
-import FuelConsumptionPage from './pages/FuelConsumptionPage'; // Make sure this is imported if you have it
-import SettingsPage from './pages/SettingsPage'; // NEW: Import SettingsPage
+import AllTripsPage from './pages/AllTripsPage';
+import FuelConsumptionPage from './pages/FuelConsumptionPage';
+import SettingsPage from './pages/SettingsPage';
+import RouteChargesManagementPage from './pages/RouteChargesManagementPage'; // NEW: Import RouteChargesManagementPage
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home'); // Default page is 'home'
@@ -22,10 +23,12 @@ function App() {
         return <DriverManagementPage />;
       case 'allTrips':
         return <AllTripsPage />;
-      case 'fuelConsumption': // Assuming you might have a dedicated fuel consumption page
+      case 'fuelConsumption':
         return <FuelConsumptionPage />;
-      case 'settings': // NEW: Render SettingsPage
+      case 'settings':
         return <SettingsPage />;
+      case 'routeChargesManagement': // NEW: Render RouteChargesManagementPage
+        return <RouteChargesManagementPage />;
       default:
         return <HomePage />;
     }

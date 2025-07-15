@@ -1,21 +1,22 @@
 // myan-san/src/components/DashboardLayout.jsx
-import React, { useState, useRef } from 'react'; // useRef ကို ထည့်သွင်းပါ။
+import React, { useState, useRef } from 'react';
 import {
   Menu as MenuIcon,
   Close as CloseIcon,
-  Home as HomeIcon, // Home icon
-  DirectionsCar as DirectionsCarIcon, // Car icon
-  Group as GroupIcon, // Driver icon
-  ListAlt as ListAltIcon, // List/Records icon
-  LocalGasStation as LocalGasStationIcon, // Fuel Consumption icon - NEW
-  Settings as SettingsIcon // Settings icon - NEW
+  Home as HomeIcon,
+  DirectionsCar as DirectionsCarIcon,
+  Group as GroupIcon,
+  ListAlt as ListAltIcon,
+  LocalGasStation as LocalGasStationIcon,
+  Settings as SettingsIcon,
+  AttachMoney as AttachMoneyIcon // NEW: Icon for Route Charges Management
 } from '@mui/icons-material';
 
 function DashboardLayout({ currentPage, setCurrentPage, children }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Default to closed
-  const sidebarRef = useRef(null); // Sidebar element ကို ကိုင်တွယ်ရန်
-  const toggleButtonRef = useRef(null); // Toggle button element ကို ကိုင်တွယ်ရန်
-  let sidebarCloseTimer = useRef(null); // Sidebar ပိတ်ရန် timer ကို ကိုင်တွယ်ရန်
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef(null);
+  const toggleButtonRef = useRef(null);
+  let sidebarCloseTimer = useRef(null);
 
   // Page titles and their corresponding icons
   const pageInfo = {
@@ -23,38 +24,38 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
     carManagement: { title: 'ကားစီမံခန့်ခွဲမှု', icon: <DirectionsCarIcon sx={{ mr: 1 }} /> },
     driverManagement: { title: 'ယာဉ်မောင်း စီမံခန့်ခွဲမှု', icon: <GroupIcon sx={{ mr: 1 }} /> },
     allTrips: { title: 'မှတ်တမ်းများ', icon: <ListAltIcon sx={{ mr: 1 }} /> },
-    fuelConsumption: { title: 'ဆီစားနှုန်း မှတ်တမ်း', icon: <LocalGasStationIcon sx={{ mr: 1 }} /> }, // NEW
-    settings: { title: 'ဒေတာ စီမံခန့်ခွဲမှု', icon: <SettingsIcon sx={{ mr: 1 }} /> }, // NEW
+    fuelConsumption: { title: 'ဆီစားနှုန်း မှတ်တမ်း', icon: <LocalGasStationIcon sx={{ mr: 1 }} /> },
+    settings: { title: 'ဒေတာ စီမံခန့်ခွဲမှု', icon: <SettingsIcon sx={{ mr: 1 }} /> },
+    routeChargesManagement: { title: 'လမ်းကြောင်းခ စီမံခန့်ခွဲမှု', icon: <AttachMoneyIcon sx={{ mr: 1 }} /> }, // NEW
   };
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
-    setSidebarOpen(false); // Page ပြောင်းတာနဲ့ Sidebar ကို auto-hide လုပ်ပါ။
+    setSidebarOpen(false);
   };
 
   const handleMouseEnterButton = () => {
-    clearTimeout(sidebarCloseTimer.current); // Timer ရှိရင် clear လုပ်ပါ။
-    setSidebarOpen(true); // Mouse တင်တာနဲ့ Sidebar ကို ဖွင့်ပါ။
+    clearTimeout(sidebarCloseTimer.current);
+    setSidebarOpen(true);
   };
 
   const handleMouseLeaveSidebar = () => {
-    // Sidebar ပိတ်ရန် timer စပါ။ ဥပမာ 300ms ပြီးရင် ပိတ်ပါ။
     sidebarCloseTimer.current = setTimeout(() => {
       setSidebarOpen(false);
     }, 300);
   };
 
   const handleMouseEnterSidebar = () => {
-    clearTimeout(sidebarCloseTimer.current); // Sidebar ထဲကို Mouse ဝင်လာရင် timer ကို clear လုပ်ပါ။
+    clearTimeout(sidebarCloseTimer.current);
   };
 
   const handleClickCloseButton = () => {
-    setSidebarOpen(false); // Close icon ကို နှိပ်ရင် ချက်ချင်းပိတ်ပါ။
-    clearTimeout(sidebarCloseTimer.current); // Timer ရှိရင် clear လုပ်ပါ။
+    setSidebarOpen(false);
+    clearTimeout(sidebarCloseTimer.current);
   };
 
-  const headerHeight = '64px'; // Header ၏ အမြင့်ကို သတ်မှတ်ပါ။
-  const sidebarWidth = '256px'; // Sidebar ၏ အကျယ်ကို သတ်မှတ်ပါ။
+  const headerHeight = '64px';
+  const sidebarWidth = '256px';
 
   return (
     <div className="flex min-h-screen bg-gray-100 font-inter relative">
@@ -64,14 +65,14 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
       >
         <button
           ref={toggleButtonRef}
-          onMouseEnter={handleMouseEnterButton} // Mouse hover နဲ့ ဖွင့်ရန်
-          onClick={sidebarOpen ? handleClickCloseButton : () => setSidebarOpen(true)} // Click နဲ့လည်း ဖွင့်/ပိတ် လုပ်နိုင်ရန်
+          onMouseEnter={handleMouseEnterButton}
+          onClick={sidebarOpen ? handleClickCloseButton : () => setSidebarOpen(true)}
           className="p-2 mr-4 rounded-md text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-300 ease-in-out"
         >
           {sidebarOpen ? <CloseIcon /> : <MenuIcon />}
         </button>
-        <h1 className="text-xl font-semibold text-white flex items-center"> {/* flex items-center ထည့်ပါ */}
-          {pageInfo[currentPage]?.icon} {/* Icon ကို ဖော်ပြပါ */}
+        <h1 className="text-xl font-semibold text-white flex items-center">
+          {pageInfo[currentPage]?.icon}
           {pageInfo[currentPage]?.title}
         </h1>
       </header>
@@ -79,17 +80,17 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
       {/* Sidebar */}
       <aside
         ref={sidebarRef}
-        onMouseEnter={handleMouseEnterSidebar} // Sidebar ထဲကို Mouse ဝင်လာရင် timer ကို clear လုပ်ရန်
-        onMouseLeave={handleMouseLeaveSidebar} // Sidebar ကနေ Mouse ထွက်သွားရင် ပိတ်ရန်
-        className={`fixed top-0 left-0 h-full bg-blue-800 text-white shadow-lg flex flex-col transition-all duration-300 ease-in-out z-20 overflow-hidden pt-16`} /* pt-16 သည် Header အောက်တွင် နေရာယူရန် */
+        onMouseEnter={handleMouseEnterSidebar}
+        onMouseLeave={handleMouseLeaveSidebar}
+        className={`fixed top-0 left-0 h-full bg-blue-800 text-white shadow-lg flex flex-col transition-all duration-300 ease-in-out z-20 overflow-hidden pt-16`}
         style={{ width: sidebarOpen ? sidebarWidth : '0px', transform: sidebarOpen ? 'translateX(0)' : `translateX(-${sidebarWidth})` }}
       >
-        <nav className="flex-1 px-4 py-6 overflow-y-auto"> {/* Sidebar content တွင် scrollbar လိုအပ်ပါက */}
+        <nav className="flex-1 px-4 py-6 overflow-y-auto">
           <ul>
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('home')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${ // Added flex and items-center
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
                   currentPage === 'home' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
                 }`}
               >
@@ -100,7 +101,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('carManagement')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${ // Added flex and items-center
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
                   currentPage === 'carManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
                 }`}
               >
@@ -111,7 +112,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('driverManagement')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${ // Added flex and items-center
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
                   currentPage === 'driverManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
                 }`}
               >
@@ -119,11 +120,10 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
                 {pageInfo.driverManagement.title}
               </button>
             </li>
-            {/* AllTripsPage အတွက် navigation link အသစ် */}
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('allTrips')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${ // Added flex and items-center
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
                   currentPage === 'allTrips' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
                 }`}
               >
@@ -131,7 +131,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
                 {pageInfo.allTrips.title}
               </button>
             </li>
-            {/* NEW: Fuel Consumption Page navigation link */}
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('fuelConsumption')}
@@ -143,7 +142,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
                 {pageInfo.fuelConsumption.title}
               </button>
             </li>
-            {/* NEW: Settings Page navigation link */}
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('settings')}
@@ -155,6 +153,18 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
                 {pageInfo.settings.title}
               </button>
             </li>
+            {/* NEW: Route Charges Management Page navigation link */}
+            <li className="mb-2">
+              <button
+                onClick={() => handlePageChange('routeChargesManagement')}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
+                  currentPage === 'routeChargesManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
+                }`}
+              >
+                <AttachMoneyIcon sx={{ mr: 2 }} />
+                {pageInfo.routeChargesManagement.title}
+              </button>
+            </li>
           </ul>
         </nav>
         <div className="p-4 text-center text-blue-300 text-sm border-t border-blue-700">
@@ -164,8 +174,8 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out pt-16`} /* pt-16 သည် Header အမြင့်အတွက် */
-        style={{ marginLeft: sidebarOpen ? sidebarWidth : '0px' }} /* Sidebar ၏ width အလိုက် Main content ၏ left margin ကို ချိန်ညှိပါပြီ။ */
+        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out pt-16`}
+        style={{ marginLeft: sidebarOpen ? sidebarWidth : '0px' }}
       >
         {/* Page Content */}
         <main className="flex-1 p-6 overflow-y-auto">
