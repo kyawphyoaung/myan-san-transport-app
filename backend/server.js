@@ -30,7 +30,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
     // Database tables များကို ဖန်တီးပါ။
     db.serialize(() => {
-      // Trips Table (Re-added updated_at column)
+      // Trips Table (Re-added updated_at column, NEW: empty_handling_location)
       db.run(`
         CREATE TABLE IF NOT EXISTS trips (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,6 +41,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
           route_charge INTEGER,
           empty_pickup_charge INTEGER,
           empty_dropoff_charge INTEGER,
+          empty_handling_location TEXT, -- NEW: Column to store the selected empty handling location
           overnight_status TEXT,
           day_over_status TEXT,
           remarks TEXT,
@@ -51,7 +52,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
           driver_name TEXT DEFAULT 'N/A',
           is_manual_edited INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP -- Re-added updated_at for trips table
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `, (err) => {
         if (err) console.error("Error creating trips table:", err.message);
@@ -76,6 +77,14 @@ const db = new sqlite3.Database(dbPath, (err) => {
               db.run(`ALTER TABLE trips ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`, (err) => {
                 if (err) console.error("Error adding updated_at column to trips:", err.message);
                 else console.log("Added updated_at column to trips table.");
+              });
+            }
+            // NEW: Add empty_handling_location column if it doesn't exist
+            const emptyHandlingLocationExists = columns.some(col => col.name === 'empty_handling_location');
+            if (!emptyHandlingLocationExists) {
+              db.run(`ALTER TABLE trips ADD COLUMN empty_handling_location TEXT`, (err) => {
+                if (err) console.error("Error adding empty_handling_location column to trips:", err.message);
+                else console.log("Added empty_handling_location column to trips table.");
               });
             }
           });
@@ -311,6 +320,95 @@ const db = new sqlite3.Database(dbPath, (err) => {
         }
       });
 
+      // NEW: Empty Charges Versioning Table
+      db.run(`
+        CREATE TABLE IF NOT EXISTS empty_charges_versions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          effective_date TEXT NOT NULL,    -- YYYY-MM-DD format
+          end_date TEXT,                   -- YYYY-MM-DD format (NULL if currently active)
+          version_number TEXT,             -- e.g., '1.0', '2.0'
+          empty_charge_data TEXT NOT NULL, -- JSON string of the empty charges data
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `, (err) => {
+        if (err) console.error("Error creating empty_charges_versions table:", err.message);
+        else {
+          console.log("Empty_charges_versions table created or already exists.");
+
+          // Add new columns if they don't exist (for existing databases)
+          db.all(`PRAGMA table_info(empty_charges_versions)`, (err, columns) => {
+            if (err) {
+              console.error("Error checking table info for empty_charges_versions:", err.message);
+              return;
+            }
+            const existingColumnNames = new Set(columns.map(col => col.name));
+            if (!existingColumnNames.has('version_number')) {
+              db.run(`ALTER TABLE empty_charges_versions ADD COLUMN version_number TEXT`, (alterErr) => {
+                if (alterErr) console.error("Error adding version_number column to empty_charges_versions:", alterErr.message);
+                else console.log("Added version_number column to empty_charges_versions table.");
+              });
+            }
+            if (!existingColumnNames.has('end_date')) {
+              db.run(`ALTER TABLE empty_charges_versions ADD COLUMN end_date TEXT`, (alterErr) => {
+                if (alterErr) console.error("Error adding end_date column to empty_charges_versions:", alterErr.message);
+                else console.log("Added end_date column to empty_charges_versions table.");
+              });
+            }
+
+            // Initial insert of empty charges data if the table is empty
+            db.get(`SELECT COUNT(*) AS count FROM empty_charges_versions`, [], (err, row) => {
+              if (err) {
+                console.error("Error checking empty charges versions table count:", err.message);
+                return;
+              }
+              if (row.count === 0) { // If table is completely empty, insert initial data
+                const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+                const initialEmptyChargeData = JSON.stringify({
+                  empty_locations_charges: [
+                    // This data should come from your "အခွံချ:ခ စျေးနှုန်း.jpg"
+                    // For now, I'm putting placeholder data. You'll need to fill this accurately.
+                    { "id": 1, "location": "TKT (T Star)", "charge_40_ft": 30000 },
+                    { "id": 2, "location": "DIL / ICH", "charge_40_ft": 45000 },
+                    { "id": 3, "location": "ဒဂုံဆိပ်ကမ်း / RG", "charge_40_ft": 60000 },
+                    { "id": 4, "location": "TLW (MITT)", "charge_40_ft": 150000 },
+                    { "id": 5, "location": "MIP / MEC / Asia World", "charge_40_ft": 30000 },
+                    { "id": 6, "location": "SML", "charge_40_ft": 45000 },
+                    { "id": 7, "location": "HTY (HICD / EverGreen)", "charge_40_ft": 70000 },
+                    { "id": 8, "location": "ကုမ္ပဏီ (HLA)", "charge_40_ft": 85000 },
+                    { "id": 9, "location": "HTY (MYCO / ပုဂ္ဂလိကစက်မှု)", "charge_40_ft": 100000 },
+                    { "id": 10, "location": "လှိုင်သာယာ စက်မှုဇုန် ပတ်ပတ်လည်၊ ရွှေပြည်သာ", "charge_40_ft": 45000 },
+                    { "id": 11, "location": "MITT (SEZ)", "charge_40_ft": 80000 },
+                    { "id": 12, "location": "ဗိုလ်တထောင် (၁/၂/၃) ရပ်ကွက်အတွင်း၊ ရွှေပြည်သာ", "charge_40_ft": 45000 },
+                    { "id": 13, "location": "ဗိုလ်တထောင် (၁/၂/၃) ရပ်ကွက်အတွင်း၊ လှိုင်သာယာ", "charge_40_ft": 45000 }
+                  ],
+                  same_direction_overrides: [
+                    // Example rules based on your scenarios. You will need to define these accurately.
+                    // If a trip matches these, empty charges are 0.
+                    // { "main_trip_origin": "MIP", "main_trip_destination": "တောင်ဒဂုံ", "empty_location": "DIL / ICH" },
+                    // { "main_trip_origin": "သီလဝါ", "main_trip_destination": "MIP", "empty_location": "DIL / ICH" }
+                    // Scenario 3 (Opposite) would NOT be in this list.
+                  ],
+                  port_locations: [ // List of locations considered "Ports" for logic
+                    "MIP", "AWPT", "MIIT", "သီလဝါ", "RGL", "KL", "BWT", "SML", "MEC", "Asia World", "TMH", "MITT" // Add all relevant port names
+                  ]
+                });
+
+                db.run(`INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data) VALUES (?, ?, ?, ?)`,
+                  [today, null, '1.0', initialEmptyChargeData], // Initial version is 1.0, active (end_date NULL)
+                  function (err) {
+                    if (err) {
+                      console.error("Error inserting initial empty charges version:", err.message);
+                    } else {
+                      console.log(`Initial empty charges version inserted with ID: ${this.lastID} and Version: 1.0`);
+                    }
+                  }
+                );
+              }
+            });
+          });
+        }
+      });
+
 
       // Car Driver Assignments Table
       // UPDATED: Removed UNIQUE(car_no, assigned_date) as requested.
@@ -460,9 +558,10 @@ app.get('/api/trips', async (req, res) => {
 
 // API endpoint to add a new trip
 app.post('/api/trips', async (req, res) => {
-  const {
+  let {
     date, carNo, from_location, to_location, routeCharge,
-    empty_pickup_charge, empty_dropoff_charge, overnight_status, day_over_status,
+    empty_handling_location, // NEW: empty_handling_location from frontend
+    overnight_status, day_over_status,
     remarks, total_charge, km_travelled, is_manual_edited, driverName
   } = req.body;
 
@@ -470,16 +569,43 @@ app.post('/api/trips', async (req, res) => {
     return res.status(400).json({ error: "Missing required trip fields (date, carNo, from, to, driverName)." });
   }
 
+  let empty_pickup_charge = 0;
+  let empty_dropoff_charge = 0;
+
+  // Calculate empty charges if empty_handling_location is provided
+  if (empty_handling_location) {
+    const emptyChargeResult = await calculateEmptyCharge(from_location, to_location, empty_handling_location, date);
+    if (emptyChargeResult.type === 'pickup') {
+      empty_pickup_charge = emptyChargeResult.charge;
+    } else if (emptyChargeResult.type === 'dropoff') {
+      empty_dropoff_charge = emptyChargeResult.charge;
+    }
+    // If total_charge was not manually edited, update it to include the empty charge
+    if (!is_manual_edited) {
+      total_charge = (routeCharge || 0) + empty_pickup_charge + empty_dropoff_charge;
+    }
+  } else {
+    // If no empty_handling_location, ensure empty charges are 0
+    empty_pickup_charge = 0;
+    empty_dropoff_charge = 0;
+    if (!is_manual_edited) { // Recalculate total_charge if not manually edited
+      total_charge = (routeCharge || 0);
+    }
+  }
+
+
   try {
     const result = await dbRun(`
       INSERT INTO trips (
         date, car_no, from_location, to_location, route_charge,
-        empty_pickup_charge, empty_dropoff_charge, overnight_status, day_over_status,
+        empty_pickup_charge, empty_dropoff_charge, empty_handling_location, -- NEW: empty_handling_location
+        overnight_status, day_over_status,
         remarks, total_charge, km_travelled, fuel_amount, fuel_cost, driver_name, is_manual_edited
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       date, carNo, from_location, to_location, routeCharge,
-      empty_pickup_charge, empty_dropoff_charge, overnight_status, day_over_status,
+      empty_pickup_charge, empty_dropoff_charge, empty_handling_location, // NEW: empty_handling_location
+      overnight_status, day_over_status,
       remarks, total_charge, km_travelled, 0, 0, driverName, is_manual_edited
     ]);
     res.status(201).json({
@@ -495,9 +621,11 @@ app.post('/api/trips', async (req, res) => {
 // API endpoint to update a trip (PUT /api/trips/:id)
 app.put('/api/trips/:id', async (req, res) => {
   const { id } = req.params;
-  const {
+  let {
     date, carNo, from_location, to_location, routeCharge,
-    empty_pickup_charge, empty_dropoff_charge, overnight_status, day_over_status,
+    empty_pickup_charge, empty_dropoff_charge, // These might be sent, but we'll recalculate if not manual
+    empty_handling_location, // NEW: empty_handling_location from frontend
+    overnight_status, day_over_status,
     remarks, total_charge, km_travelled, is_manual_edited, driverName
   } = req.body;
 
@@ -505,17 +633,41 @@ app.put('/api/trips/:id', async (req, res) => {
     return res.status(400).json({ error: "Missing required trip fields for update." });
   }
 
+  // Recalculate empty charges if not manually edited
+  if (!is_manual_edited) {
+    if (empty_handling_location) {
+      const emptyChargeResult = await calculateEmptyCharge(from_location, to_location, empty_handling_location, date);
+      empty_pickup_charge = 0; // Reset before setting
+      empty_dropoff_charge = 0; // Reset before setting
+      if (emptyChargeResult.type === 'pickup') {
+        empty_pickup_charge = emptyChargeResult.charge;
+      } else if (emptyChargeResult.type === 'dropoff') {
+        empty_dropoff_charge = emptyChargeResult.charge;
+      }
+      total_charge = (routeCharge || 0) + empty_pickup_charge + empty_dropoff_charge;
+    } else {
+      empty_pickup_charge = 0;
+      empty_dropoff_charge = 0;
+      total_charge = (routeCharge || 0);
+    }
+  }
+  // If is_manual_edited is true, then empty_pickup_charge, empty_dropoff_charge, and total_charge
+  // should be used as provided in req.body. No recalculation.
+
+
   try {
     const result = await dbRun(`
       UPDATE trips SET
         date = ?, car_no = ?, from_location = ?, to_location = ?, route_charge = ?,
-        empty_pickup_charge = ?, empty_dropoff_charge = ?, overnight_status = ?, day_over_status = ?,
+        empty_pickup_charge = ?, empty_dropoff_charge = ?, empty_handling_location = ?, -- NEW: empty_handling_location
+        overnight_status = ?, day_over_status = ?,
         remarks = ?, total_charge = ?, km_travelled = ?, fuel_amount = ?, fuel_cost = ?, driver_name = ?,
         is_manual_edited = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
       date, carNo, from_location, to_location, routeCharge,
-      empty_pickup_charge, empty_dropoff_charge, overnight_status, day_over_status,
+      empty_pickup_charge, empty_dropoff_charge, empty_handling_location, // NEW: empty_handling_location
+      overnight_status, day_over_status,
       remarks, total_charge, km_travelled, 0, 0, driverName, is_manual_edited, id
     ]);
 
@@ -861,6 +1013,356 @@ app.post('/api/route-charges/activate-version', async (req, res) => {
 });
 
 
+// NEW API: Get the current active empty charges version with full details
+app.get('/api/empty-charges/active', async (req, res) => {
+  try {
+    const row = await dbGet(`
+      SELECT id, effective_date, version_number, empty_charge_data
+      FROM empty_charges_versions
+      WHERE end_date IS NULL
+      ORDER BY effective_date DESC, created_at DESC
+      LIMIT 1
+    `);
+    if (row) {
+      try {
+        const emptyCharges = JSON.parse(row.empty_charge_data);
+        res.json({
+          message: "success",
+          data: {
+            id: row.id,
+            effectiveDate: row.effective_date,
+            versionNumber: row.version_number,
+            emptyCharges: emptyCharges // This will contain empty_locations_charges and same_direction_overrides
+          }
+        });
+      } catch (parseErr) {
+        res.status(500).json({ error: "Failed to parse empty charges data from active version." });
+      }
+    } else {
+      res.status(404).json({ message: "No active empty charges version found." });
+    }
+  } catch (err) {
+    console.error("Error fetching active empty charges version:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Create a new empty charges version
+app.post('/api/empty-charges/new-version', async (req, res) => {
+  const { effectiveDate, emptyChargeData } = req.body;
+
+  if (!effectiveDate || !emptyChargeData) {
+    return res.status(400).json({ error: "Effective date and empty charge data are required." });
+  }
+
+  let parsedEmptyChargeData;
+  try {
+    parsedEmptyChargeData = JSON.parse(emptyChargeData);
+    // Basic validation: ensure it's an object with expected keys
+    if (typeof parsedEmptyChargeData !== 'object' || parsedEmptyChargeData === null ||
+        !Array.isArray(parsedEmptyChargeData.empty_locations_charges) ||
+        !Array.isArray(parsedEmptyChargeData.same_direction_overrides) ||
+        !Array.isArray(parsedEmptyChargeData.port_locations)) {
+      return res.status(400).json({ error: "Invalid empty charge data format. Must be a JSON object with 'empty_locations_charges', 'same_direction_overrides', and 'port_locations' arrays." });
+    }
+  } catch (parseErr) {
+    return res.status(400).json({ error: "Invalid empty charge data format. Must be a valid JSON string." });
+  }
+
+  try {
+    await dbRun('BEGIN TRANSACTION');
+
+    // 1. Find any existing active empty charges version (end_date IS NULL)
+    const existingActiveVersion = await dbGet(
+      `SELECT id, effective_date, version_number FROM empty_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
+    );
+
+    let newVersionNumber = '1.0'; // Default for the very first version
+
+    // 2. If an active version exists, update its end_date and determine new version number
+    if (existingActiveVersion) {
+      if (effectiveDate <= existingActiveVersion.effective_date) {
+        await dbRun('ROLLBACK');
+        return res.status(400).json({
+          error: `New effective date (${effectiveDate}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+        });
+      }
+
+      const oldEndDate = new Date(effectiveDate);
+      oldEndDate.setDate(oldEndDate.getDate() - 1);
+      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+
+      await dbRun(
+        `UPDATE empty_charges_versions SET end_date = ? WHERE id = ?`,
+        [formattedOldEndDate, existingActiveVersion.id]
+      );
+      console.log(`Ended previous empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+
+      // Increment version number
+      if (existingActiveVersion.version_number) {
+        const currentMajorVersion = parseInt(existingActiveVersion.version_number.split('.')[0]);
+        newVersionNumber = `${currentMajorVersion + 1}.0`;
+      }
+    }
+
+    // 3. Insert the new empty charges version
+    const result = await dbRun(
+      `INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data)
+       VALUES (?, ?, ?, ?)`,
+      [effectiveDate, null, newVersionNumber, emptyChargeData]
+    );
+
+    await dbRun('COMMIT');
+    res.status(201).json({
+      message: "New empty charges version added successfully",
+      id: result.id,
+      versionNumber: newVersionNumber
+    });
+
+  } catch (err) {
+    await dbRun('ROLLBACK');
+    console.error("Error adding new empty charges version:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Get all historical empty charges versions
+app.get('/api/empty-charges/history', async (req, res) => {
+  try {
+    const rows = await dbAll(`
+      SELECT id, effective_date, end_date, version_number, created_at, empty_charge_data
+      FROM empty_charges_versions
+      ORDER BY effective_date DESC, created_at DESC
+    `);
+    const historyData = rows.map(row => ({
+      ...row,
+      empty_charge_data: JSON.parse(row.empty_charge_data)
+    }));
+    res.json({
+      message: "success",
+      data: historyData
+    });
+  } catch (err) {
+    console.error("Error fetching empty charges history:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Update effective_date and end_date of a specific empty charges version
+app.put('/api/empty-charges-versions/:id', async (req, res) => {
+  const { id } = req.params;
+  const { effectiveDate, endDate } = req.body;
+
+  if (!effectiveDate) {
+    return res.status(400).json({ error: "Effective date is required for update." });
+  }
+
+  try {
+    await dbRun('BEGIN TRANSACTION');
+
+    const existingVersion = await dbGet(`SELECT * FROM empty_charges_versions WHERE id = ?`, [id]);
+    if (!existingVersion) {
+      await dbRun('ROLLBACK');
+      return res.status(404).json({ message: "Empty charges version not found." });
+    }
+
+    if (endDate && effectiveDate > endDate) {
+      await dbRun('ROLLBACK');
+      return res.status(400).json({ error: "Effective date cannot be after end date." });
+    }
+
+    // Validation for overlaps/gaps (similar to route charges)
+    const prevVersion = await dbGet(`
+      SELECT id, effective_date, end_date FROM empty_charges_versions
+      WHERE effective_date < ? AND id != ?
+      ORDER BY effective_date DESC, created_at DESC LIMIT 1
+    `, [effectiveDate, id]);
+
+    if (prevVersion && prevVersion.end_date && effectiveDate <= prevVersion.end_date) {
+      await dbRun('ROLLBACK');
+      return res.status(400).json({ error: `New effective date (${effectiveDate}) overlaps with previous version (ends ${prevVersion.end_date}).` });
+    }
+
+    const nextVersion = await dbGet(`
+      SELECT id, effective_date, end_date FROM empty_charges_versions
+      WHERE effective_date > ? AND id != ?
+      ORDER BY effective_date ASC, created_at ASC LIMIT 1
+    `, [endDate || '9999-12-31', id]);
+
+    if (nextVersion && endDate && endDate >= nextVersion.effective_date) {
+      await dbRun('ROLLBACK');
+      return res.status(400).json({ error: `New end date (${endDate}) overlaps with next version (starts ${nextVersion.effective_date}).` });
+    }
+    if (nextVersion && !endDate && nextVersion.effective_date <= effectiveDate) {
+        await dbRun('ROLLBACK');
+        return res.status(400).json({ error: `Cannot set this version as active, it overlaps with a future version starting ${nextVersion.effective_date}. Please set an end date for this version.` });
+    }
+
+    const result = await dbRun(`
+      UPDATE empty_charges_versions SET
+        effective_date = ?,
+        end_date = ?,
+        created_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [effectiveDate, endDate, id]);
+
+    if (result.changes === 0) {
+      await dbRun('ROLLBACK');
+      return res.status(404).json({ message: "Empty charges version not found or no changes made." });
+    }
+
+    await dbRun('COMMIT');
+    res.json({
+      message: "Empty charges version dates updated successfully",
+      id: id
+    });
+  } catch (err) {
+    await dbRun('ROLLBACK');
+    console.error("Error updating empty charges version dates:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Activate a historical empty charges version (creates a new active record)
+app.post('/api/empty-charges/activate-version', async (req, res) => {
+  const { versionIdToActivate, newEffectiveDateForActivation } = req.body;
+
+  if (!versionIdToActivate || !newEffectiveDateForActivation) {
+    return res.status(400).json({ error: "Version ID to activate and new effective date are required." });
+  }
+
+  try {
+    await dbRun('BEGIN TRANSACTION');
+
+    const historicalVersion = await dbGet(`SELECT empty_charge_data, version_number FROM empty_charges_versions WHERE id = ?`, [versionIdToActivate]);
+    if (!historicalVersion) {
+      await dbRun('ROLLBACK');
+      return res.status(404).json({ message: "Historical version not found." });
+    }
+
+    const existingActiveVersion = await dbGet(
+      `SELECT id, effective_date FROM empty_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
+    );
+
+    if (existingActiveVersion) {
+      if (newEffectiveDateForActivation <= existingActiveVersion.effective_date) {
+        await dbRun('ROLLBACK');
+        return res.status(400).json({
+          error: `New activation date (${newEffectiveDateForActivation}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+        });
+      }
+
+      const oldEndDate = new Date(newEffectiveDateForActivation);
+      oldEndDate.setDate(oldEndDate.getDate() - 1);
+      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+
+      await dbRun(
+        `UPDATE empty_charges_versions SET end_date = ? WHERE id = ?`,
+        [formattedOldEndDate, existingActiveVersion.id]
+      );
+      console.log(`Ended previous active empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+    }
+
+    const maxVersionRow = await dbGet(`SELECT MAX(CAST(SUBSTR(version_number, 1, INSTR(version_number, '.') - 1) AS INTEGER)) AS max_major_version FROM empty_charges_versions`);
+    const maxMajorVersion = maxVersionRow && maxVersionRow.max_major_version ? maxVersionRow.max_major_version : 0;
+    const newVersionNumber = `${maxMajorVersion + 1}.0`;
+
+    const result = await dbRun(
+      `INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data)
+       VALUES (?, ?, ?, ?)`,
+      [newEffectiveDateForActivation, null, newVersionNumber, historicalVersion.empty_charge_data]
+    );
+
+    await dbRun('COMMIT');
+    res.status(201).json({
+      message: `Version ${historicalVersion.version_number} activated as new version ${newVersionNumber} successfully.`,
+      id: result.id,
+      versionNumber: newVersionNumber
+    });
+
+  } catch (err) {
+    await dbRun('ROLLBACK');
+    console.error("Error activating historical empty charges version:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// Helper function to calculate empty charges based on business logic
+async function calculateEmptyCharge(tripOrigin, tripDestination, emptyHandlingLocation, tripDate) {
+  let emptyCharge = 0;
+  let emptyChargeType = 'none'; // 'pickup', 'dropoff', or 'none'
+
+  try {
+    // 1. Get the active empty charges version for the given tripDate
+    const activeEmptyChargesVersion = await dbGet(`
+      SELECT empty_charge_data
+      FROM empty_charges_versions
+      WHERE effective_date <= ? AND (end_date IS NULL OR end_date >= ?)
+      ORDER BY effective_date DESC, created_at DESC
+      LIMIT 1
+    `, [tripDate, tripDate]);
+
+    if (!activeEmptyChargesVersion) {
+      console.warn(`No active empty charges version found for date: ${tripDate}. Empty charge will be 0.`);
+      return { charge: 0, type: 'none' };
+    }
+
+    const emptyChargeData = JSON.parse(activeEmptyChargesVersion.empty_charge_data);
+    const emptyLocationsCharges = emptyChargeData.empty_locations_charges || [];
+    const sameDirectionOverrides = emptyChargeData.same_direction_overrides || [];
+    const portLocations = new Set(emptyChargeData.port_locations || []);
+
+    // Determine if it's an Empty Pickup or Empty Dropoff scenario based on port locations
+    // Rule 1: Point A is a Port -> Empty Dropoff (Container came with cargo, dropped empty after cargo delivery)
+    if (portLocations.has(tripOrigin)) {
+      emptyChargeType = 'dropoff';
+    }
+    // Rule 2: Point B is a Port -> Empty Pickup (Container picked up empty, then loaded for delivery to Point B)
+    else if (portLocations.has(tripDestination)) {
+      emptyChargeType = 'pickup';
+    } else {
+      // If neither A nor B is a port, assume no empty charge logic applies for now
+      // Or, if needed, add more complex rules or require user input
+      console.log(`Neither trip origin (${tripOrigin}) nor destination (${tripDestination}) is a recognized port. No empty charge calculated.`);
+      return { charge: 0, type: 'none' };
+    }
+
+    // Find the base charge for the empty handling location
+    let baseCharge = 0;
+    const locationChargeEntry = emptyLocationsCharges.find(item => item.location === emptyHandlingLocation);
+    if (locationChargeEntry) {
+      baseCharge = locationChargeEntry.charge_40_ft || 0; // Assuming 40' container for now
+    } else {
+      console.warn(`Empty handling location '${emptyHandlingLocation}' not found in empty_locations_charges. Base charge will be 0.`);
+      return { charge: 0, type: 'none' }; // Location not found in charges list
+    }
+
+    // Check for "Same Direction" override
+    const isSameDirection = sameDirectionOverrides.some(rule =>
+      rule.main_trip_origin === tripOrigin &&
+      rule.main_trip_destination === tripDestination &&
+      rule.empty_location === emptyHandlingLocation
+    );
+
+    if (isSameDirection) {
+      emptyCharge = 0; // Same direction, no extra charge
+      console.log(`Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Same Direction'. Charge is 0.`);
+    } else {
+      emptyCharge = baseCharge; // Opposite direction, apply base charge
+      console.log(`Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Opposite Direction'. Charge is ${baseCharge}.`);
+    }
+
+  } catch (err) {
+    console.error("Error in calculateEmptyCharge:", err.message);
+    emptyCharge = 0; // Default to 0 on error
+    emptyChargeType = 'none';
+  }
+
+  return { charge: emptyCharge, type: emptyChargeType };
+}
+
+
 // API endpoint to get all settings
 app.get('/api/settings', async (req, res) => {
   try {
@@ -874,6 +1376,7 @@ app.get('/api/settings', async (req, res) => {
       data: settings
     });
   } catch (err) {
+      console.error("Error fetching settings:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1508,7 +2011,8 @@ app.get('/api/trips-by-car-month/:carNo/:year/:month', async (req, res) => {
 app.get('/api/trips/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const trip = await dbGet(`SELECT * FROM trips WHERE id = ?`, [id]);
+    // Include empty_handling_location in the select statement
+    const trip = await dbGet(`SELECT *, empty_handling_location FROM trips WHERE id = ?`, [id]);
     if (trip) {
       res.json({ message: "success", data: trip });
     } else {
@@ -2250,7 +2754,8 @@ app.post('/api/restore', async (req, res) => {
       'fuel_logs',
       'general_expenses',
       'settings',
-      'route_charges_versions'
+      'route_charges_versions',
+      'empty_charges_versions' // NEW: Empty charges versions
     ];
 
     // Clear existing data from tables in the defined order
@@ -2268,6 +2773,7 @@ app.post('/api/restore', async (req, res) => {
       'general_expenses',
       'settings',
       'route_charges_versions',
+      'empty_charges_versions', // NEW: Empty charges versions
       'car_driver_assignments',    // Depends on drivers
       'fuel_readings'              // Depends on trips
     ];

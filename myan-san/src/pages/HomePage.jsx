@@ -7,29 +7,33 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, TextField, Select, MenuItem, FormControl, InputLabel,
   Checkbox, Button, Box, Typography, Alert, CircularProgress, Dialog,
-  DialogActions, DialogContent, DialogContentText, DialogTitle
+  DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 
 // Static data များကို import လုပ်ခြင်း
 import carNumbersData from '../data/carNumbers.json';
-import emptyContainerLocationsData from '../data/emptyContainerLocations.json';
+// emptyContainerLocationsData ကို ဖယ်ရှားပါပြီ။ Backend မှ empty_charges_versions ကို သုံးပါမည်။
 import kmData from '../data/kmData.json';
 import { formatMMK } from '../utils/currencyFormatter'; // Currency formatter ကို import လုပ်ပါ။
 
 function HomePage() {
-  // Form input များကို သိမ်းဆည်းရန် state များ (အသစ်ထည့်သွင်းရန်)
+  // Form input များကို သိမ်းဆည်းရန် state များ
   const [formData, setFormData] = useState({
     date: '',
     carNo: '',
     from: '',
     to: '',
-    emptyContainer: '', // Empty Container Pickup/Drop-off location ID
-    emptyDropoffCharge: 0, // Renamed to "အခွံချခ"
-    overnightStay: false, // အသားအိပ်
-    dayOverDelayed: false, // နေ့ကျော်/ပြီး
-    remarks: '', // မှတ်ချက်
-    driverName: '', // ယာဉ်မောင်းအမည်
+    emptyHandlingLocation: '', // NEW: Empty Container Pickup/Drop-off location name
+    overnightStay: false,
+    dayOverDelayed: false,
+    remarks: '',
+    driverName: '',
+    routeCharge: 0, // Auto-calculated
+    emptyCharge: 0, // NEW: Combined empty pickup/dropoff charge (auto-calculated)
+    totalCharge: 0, // Auto-calculated initially, can be manual
+    kmTravelled: 0, // Auto-calculated
+    isManualEdited: false, // Flag to check if totalCharge was manually edited
   });
 
   // Editing အတွက် state များ
@@ -39,15 +43,16 @@ function HomePage() {
     carNo: '',
     from: '',
     to: '',
-    emptyContainer: '', // Empty Container Pickup/Drop-off location ID
-    emptyDropoffCharge: 0, // Renamed to "အခွံချခ"
+    emptyHandlingLocation: '', // NEW: Empty Container Pickup/Drop-off location name
     overnightStay: false,
     dayOverDelayed: false,
     remarks: '',
     driverName: '',
-    // These will store the numerical values directly for editing
-    routeCharge: 0, // This will be calculated and displayed
-    kmTravelled: 0, // This will be calculated and displayed
+    routeCharge: 0,
+    emptyCharge: 0, // NEW: Combined empty pickup/dropoff charge
+    totalCharge: 0,
+    kmTravelled: 0,
+    isManualEdited: false,
   });
 
   // တွက်ချက်ထားသော ရလဒ်များကို သိမ်းဆည်းရန် state (Database မှ ရယူမည်)
@@ -63,15 +68,20 @@ function HomePage() {
   // Backend မှ ရယူမည့် ကား-ယာဉ်မောင်း ချိတ်ဆက်မှုများ
   const [carDriverAssignments, setCarDriverAssignments] = useState([]);
 
+  // NEW: States for Empty Charges Data from Backend
+  const [emptyChargeData, setEmptyChargeData] = useState(null); // Stores empty_locations_charges, same_direction_overrides, port_locations
+  const [emptyLocationsOptions, setEmptyLocationsOptions] = useState([]); // For the empty handling location dropdown
+  const [portLocations, setPortLocations] = useState(new Set()); // For quick lookup of port locations
+
   // HomePage Table Filter states (CarNo, Month, Year only)
   const [filterCarNo, setFilterCarNo] = useState('');
-  const [filterYear, setFilterYear] = useState(''); // Default to empty string for "အားလုံး"
-  const [filterMonth, setFilterMonth] = useState(''); // Default to empty string for "အားလုံး"
+  const [filterYear, setFilterYear] = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
 
   // Available options for filters
   const [uniqueCarNumbersForFilter, setUniqueCarNumbersForFilter] = useState([]);
   const [availableYears, setAvailableYears] = useState([]);
-  const [availableMonths, setAvailableMonths] = useState([]); // Months available for the selected year
+  const [availableMonths, setAvailableMonths] = useState([]);
 
   // ရွေးချယ်ထားသော row များကို သိမ်းဆည်းရန် state
   const [selectedRows, setSelectedRows] = useState(new Set());
@@ -111,22 +121,18 @@ function HomePage() {
         const currentYear = new Date().getFullYear();
         const currentMonth = new Date().getMonth() + 1;
 
-        // Default year: current year, or first available year if current year not in data, else empty string
         let initialFilterYear = years.includes(currentYear) ? currentYear : (years.length > 0 ? years[0] : '');
         setFilterYear(initialFilterYear);
 
-        // Determine initial month based on the initial year
         const monthsForInitialYear = [...new Set(data.data
           .filter(trip => new Date(trip.date).getFullYear() === initialFilterYear)
           .map(trip => new Date(trip.date).getMonth() + 1)
         )].sort((a, b) => a - b);
         setAvailableMonths(monthsForInitialYear);
 
-        // Default month: current month, or first available month if current month not in data for selected year, else empty string
         let initialFilterMonth = monthsForInitialYear.includes(currentMonth) ? currentMonth : (monthsForInitialYear.length > 0 ? monthsForInitialYear[0] : '');
         setFilterMonth(initialFilterMonth);
 
-        // Determine initial car number from the last added trip
         let initialFilterCarNo = '';
         if (data.data.length > 0) {
           const sortedTrips = [...data.data].sort((a, b) => {
@@ -135,13 +141,12 @@ function HomePage() {
             if (dateA.getTime() !== dateB.getTime()) {
               return dateB.getTime() - dateA.getTime();
             }
-            return b.id - a.id; // Fallback to ID for consistent last entry
+            return b.id - a.id;
           });
           initialFilterCarNo = sortedTrips[0].car_no;
         }
         setFilterCarNo(initialFilterCarNo);
 
-        // Apply initial filters
         applyHomePageFilters(data.data, initialFilterCarNo, initialFilterYear, initialFilterMonth);
 
       } else {
@@ -154,7 +159,7 @@ function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, []); // No dependencies that change over time, so useCallback is fine.
+  }, []);
 
   // ယာဉ်မောင်းအမည်များကို Backend မှ fetch လုပ်ရန် function
   const fetchDriverNames = useCallback(async () => {
@@ -185,6 +190,22 @@ function HomePage() {
       console.error("Error fetching car-driver assignments:", error);
     }
   }, []);
+
+  // NEW: Fetch active empty charges data
+  const fetchEmptyChargeData = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/api/empty-charges/active`);
+      const data = res.data.data.emptyCharges;
+      setEmptyChargeData(data);
+      setEmptyLocationsOptions(data.empty_locations_charges.map(loc => loc.location));
+      setPortLocations(new Set(data.port_locations));
+    } catch (err) {
+      console.error("Error fetching active empty charges data:", err);
+      setError("အခွံချ/အခွံတင် စျေးနှုန်းများ ရယူရာတွင် အမှားအယွင်းရှိခဲ့ပါသည်။");
+      setEmptyChargeData(null);
+    }
+  }, []);
+
 
   // Component စတင်သောအခါ Backend မှ settings, route charges, trips နှင့် driver names များကို ရယူခြင်း
   useEffect(() => {
@@ -218,17 +239,19 @@ function HomePage() {
       fetchTrips();
       fetchDriverNames();
       fetchCarDriverAssignments();
+      fetchEmptyChargeData(); // Fetch empty charge data
     };
 
     fetchInitialData();
-  }, [fetchTrips, fetchDriverNames, fetchCarDriverAssignments]); // Dependencies added
+  }, [fetchTrips, fetchDriverNames, fetchCarDriverAssignments, fetchEmptyChargeData]);
 
   // Input field များ ပြောင်းလဲသောအခါ state ကို update လုပ်ရန် function (New Trip Form)
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prevData => ({
       ...prevData,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : value,
+      isManualEdited: name === 'totalCharge' ? true : prevData.isManualEdited // Set manual edit flag if totalCharge is changed
     }));
   };
 
@@ -237,14 +260,15 @@ function HomePage() {
     const { name, value, type, checked } = e.target;
     setEditFormData(prevData => ({
       ...prevData,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : value,
+      isManualEdited: name === 'totalCharge' ? true : prevData.isManualEdited // Set manual edit flag if totalCharge is changed
     }));
   };
 
   // ကားနံပါတ် ပြောင်းလဲသောအခါ ယာဉ်မောင်းအမည်ကို အလိုအလျောက် ဖြည့်ရန် (New Trip Form)
   const handleCarNoChange = (e) => {
     const carNo = e.target.value;
-    const assignedDriver = carDriverAssignments.find(assignment => assignment.car_no === carNo);
+    const assignedDriver = carDriverAssignments.find(assignment => assignment.car_no === carNo && assignment.end_date === null); // Find active assignment
     setFormData(prevData => ({
       ...prevData,
       carNo: carNo,
@@ -255,7 +279,7 @@ function HomePage() {
   // ကားနံပါတ် ပြောင်းလဲသောအခါ ယာဉ်မောင်းအမည်ကို အလိုအလျောက် ဖြည့်ရန် (Edit Trip Form)
   const handleEditCarNoChange = (e) => {
     const carNo = e.target.value;
-    const assignedDriver = carDriverAssignments.find(assignment => assignment.car_no === carNo);
+    const assignedDriver = carDriverAssignments.find(assignment => assignment.car_no === carNo && assignment.end_date === null); // Find active assignment
     setEditFormData(prevData => ({
       ...prevData,
       carNo: carNo,
@@ -267,11 +291,8 @@ function HomePage() {
   const applyHomePageFilters = useCallback((trips, carNo, year, month) => {
     let tempFilteredTrips = trips.filter(trip => {
       const tripDate = new Date(trip.date);
-      // If carNo is an empty string, it means "အားလုံး" (All), so don't filter by carNo
       const matchesCarNo = carNo === '' ? true : trip.car_no === carNo;
-      // If year is an empty string, it means "အားလုံး" (All), so don't filter by year
       const matchesYear = year === '' ? true : tripDate.getFullYear() === year;
-      // If month is an empty string, it means "အားလုံး" (All), so don't filter by month
       const matchesMonth = month === '' ? true : (tripDate.getMonth() + 1) === month;
       return matchesCarNo && matchesYear && matchesMonth;
     });
@@ -283,7 +304,7 @@ function HomePage() {
     if (allTrips.length > 0) {
       applyHomePageFilters(allTrips, filterCarNo, filterYear, filterMonth);
     } else {
-      setFilteredTrips([]); // If no trips, clear filtered trips
+      setFilteredTrips([]);
     }
   }, [filterCarNo, filterYear, filterMonth, allTrips, applyHomePageFilters]);
 
@@ -295,11 +316,10 @@ function HomePage() {
         .map(trip => new Date(trip.date).getMonth() + 1)
       )].sort((a, b) => a - b);
       setAvailableMonths(monthsForSelectedYear);
-      // If the current selected month is not available for the new year, reset it
       if (!monthsForSelectedYear.includes(filterMonth) && monthsForSelectedYear.length > 0) {
         setFilterMonth(monthsForSelectedYear[0]);
       } else if (monthsForSelectedYear.length === 0) {
-        setFilterMonth(''); // No months available for this year
+        setFilterMonth('');
       }
     } else {
       setAvailableMonths([]);
@@ -341,7 +361,6 @@ function HomePage() {
       } else if (from === 'သီလဝါ') {
         return route.MIIT_40;
       }
-      // Special case: From Thilawa to MIP
       if (from === 'သီလဝါ' && to === 'MIP') {
         const sezThilawarRoute = currentRouteCharges.find(r => r.route === 'SEZ/Thilawar Zone');
         return sezThilawarRoute ? sezThilawarRoute.MIP_AWPT_40 : 0;
@@ -350,91 +369,145 @@ function HomePage() {
     return 0;
   }, [currentRouteCharges]);
 
-  // Calculate total charge function (reusable for new and edit forms)
-  const calculateTotalCharge = useCallback((
-    routeCharge,
-    emptyDropoffCharge,
-    overnightStatusBoolean, // true/false
-    dayOverStatusBoolean,   // true/false
-    currentCarNo, // Pass carNo for calculation
-    emptyContainerId // Pass emptyContainerId to check for same direction
-  ) => {
-    let total = parseFloat(routeCharge || 0);
-    total += parseFloat(emptyDropoffCharge || 0);
-
-    // Calculate empty pickup charge based on emptyContainerId and same direction logic
-    let calculatedEmptyPickupCharge = emptyContainerLocationsData.find(loc => loc.id === emptyContainerId)?.charge || 0;
-    const isSameDirection = (from, to, emptyLocId) => {
-      const emptyLocName = emptyContainerLocationsData.find(loc => loc.id === emptyLocId)?.name;
-      if (from === 'MIP' && to === 'တောင်ဒဂုံ(ဇုံ ၁/၂/၃)' && emptyLocName === 'DIL/ICH') return true;
-      if (from === 'DIL/ICH' && to === 'သီလဝါ' && emptyLocName === 'MIP') return true;
-      return false;
-    };
-
-    // Use the appropriate 'from' and 'to' based on whether it's the new form or edit form
-    const currentFrom = editingTripId ? editFormData.from : formData.from;
-    const currentTo = editingTripId ? editFormData.to : formData.to;
-
-    if (emptyContainerId && isSameDirection(currentFrom, currentTo, emptyContainerId)) {
-        calculatedEmptyPickupCharge = 0; // Set to 0 if same direction
+  // NEW: Frontend logic to calculate empty charges based on selected locations and active data
+  // Returns { charge: number, type: 'pickup' | 'dropoff' | 'none' }
+  const calculateEmptyChargeFrontend = useCallback((from, to, emptyLoc, tripDate) => {
+    if (!emptyChargeData || !emptyLoc) {
+      return { charge: 0, type: 'none' };
     }
-    total += calculatedEmptyPickupCharge; // Add the calculated empty pickup charge
 
+    const { empty_locations_charges, same_direction_overrides, port_locations } = emptyChargeData;
+    const portLocationsSet = new Set(port_locations);
+
+    let baseCharge = 0;
+    const locationChargeEntry = empty_locations_charges.find(item => item.location === emptyLoc);
+    if (locationChargeEntry) {
+      baseCharge = locationChargeEntry.charge_40_ft || 0;
+    } else {
+      console.warn(`Empty handling location '${emptyLoc}' not found in empty_locations_charges. Base charge will be 0.`);
+      return { charge: 0, type: 'none' };
+    }
+
+    let chargeType = 'none';
+    if (portLocationsSet.has(from)) {
+      chargeType = 'dropoff'; // Container came with cargo, dropped empty after cargo delivery
+    } else if (portLocationsSet.has(to)) {
+      chargeType = 'pickup'; // Container picked up empty, then loaded for delivery to Point B
+    } else {
+      // console.log(`Neither trip origin (${from}) nor destination (${to}) is a recognized port. No empty charge calculated.`);
+      return { charge: 0, type: 'none' };
+    }
+
+    // Check for "Same Direction" override
+    const isSameDirection = same_direction_overrides.some(rule =>
+      rule.main_trip_origin === from &&
+      rule.main_trip_destination === to &&
+      rule.empty_location === emptyLoc
+    );
+
+    if (isSameDirection) {
+      // console.log(`Combination (${from} -> ${to} with Empty ${emptyLoc}) is 'Same Direction'. Charge is 0.`);
+      return { charge: 0, type: chargeType }; // Same direction, no extra charge
+    } else {
+      // console.log(`Combination (${from} -> ${to} with Empty ${emptyLoc}) is 'Opposite Direction'. Charge is ${baseCharge}.`);
+      return { charge: baseCharge, type: chargeType }; // Opposite direction, apply base charge
+    }
+  }, [emptyChargeData]);
+
+
+  // Main calculation function for Total Charge (reusable for new and edit forms)
+  const calculateTotalCharge = useCallback((
+    currentRouteCharge,
+    currentEmptyCharge, // This is the combined empty charge
+    overnightStatusBoolean,
+    dayOverStatusBoolean,
+    currentCarNo
+  ) => {
+    let total = parseFloat(currentRouteCharge || 0);
+    total += parseFloat(currentEmptyCharge || 0);
 
     const overnightDayoverCombinedCharge = parseFloat(settings.overnight_dayover_combined_charge || 0);
     const gepOvernightCharge = parseFloat(settings.gep_overnight_charge || 0);
     const nineKOvernightCharge = parseFloat(settings['9k_overnight_charge'] || 0);
 
     // Convert boolean status to string for calculation logic (matches DB values)
-    const overnightStatus = overnightStatusBoolean ? 'အသားအိပ်' : 'No';
-    const dayOverStatus = dayOverStatusBoolean ? 'နေ့ကျော်' : 'No';
+    const overnightStatus = overnightStatusBoolean ? 'yes' : 'no'; // Changed to 'yes'/'no' for consistency with backend
+    const dayOverStatus = dayOverStatusBoolean ? 'yes' : 'no'; // Changed to 'yes'/'no' for consistency with backend
 
-    if (overnightStatus === 'အသားအိပ်' && dayOverStatus === 'နေ့ကျော်') {
+    if (overnightStatus === 'yes' && dayOverStatus === 'yes') {
       total += overnightDayoverCombinedCharge;
-    } else if (overnightStatus === 'အသားအိပ်') {
+    } else if (overnightStatus === 'yes') { // Only overnight, no dayover
       if (currentCarNo.startsWith('GEP')) {
         total += gepOvernightCharge;
       } else if (currentCarNo.startsWith('9K')) {
         total += nineKOvernightCharge;
       }
     }
+    // If only dayOverStatus is 'yes' and overnightStatus is 'no', no extra charge based on current logic.
     return total;
-  }, [settings, formData.from, formData.to, editFormData.from, editFormData.to, editingTripId]); // Added dependencies
+  }, [settings]);
 
 
-  // Update new trip form's route charge and kmTravelled when 'from' or 'to' changes
+  // Effect to update new trip form's auto-calculated fields
   useEffect(() => {
-    if (formData.from && formData.to) {
-      const newRouteCharge = getRouteCharge(formData.from, formData.to);
-      const newKmTravelled = kmData.find(k => k.start_point === formData.from && k.destination_point === formData.to)?.km_value || 0;
-      setFormData(prevData => ({
-        ...prevData,
-        routeCharge: newRouteCharge,
-        kmTravelled: newKmTravelled
-      }));
-    } else {
-      setFormData(prevData => ({ ...prevData, routeCharge: 0, kmTravelled: 0 }));
-    }
-  }, [formData.from, formData.to, getRouteCharge]);
+    if (formData.isManualEdited) return; // Do not auto-calculate if manually edited
 
-  // Update edit trip form's route charge and kmTravelled when 'from' or 'to' changes
+    const newRouteCharge = getRouteCharge(formData.from, formData.to);
+    const newKmTravelled = kmData.find(k => k.start_point === formData.from && k.destination_point === formData.to)?.km_value || 0;
+
+    // Calculate empty charge
+    const emptyChargeResult = calculateEmptyChargeFrontend(formData.from, formData.to, formData.emptyHandlingLocation, formData.date);
+    const newEmptyCharge = emptyChargeResult.charge;
+
+    const newTotalCharge = calculateTotalCharge(
+      newRouteCharge,
+      newEmptyCharge,
+      formData.overnightStay,
+      formData.dayOverDelayed,
+      formData.carNo
+    );
+
+    setFormData(prevData => ({
+      ...prevData,
+      routeCharge: newRouteCharge,
+      emptyCharge: newEmptyCharge,
+      kmTravelled: newKmTravelled,
+      totalCharge: newTotalCharge,
+    }));
+  }, [formData.from, formData.to, formData.emptyHandlingLocation, formData.overnightStay, formData.dayOverDelayed, formData.carNo, formData.date, formData.isManualEdited, getRouteCharge, calculateEmptyChargeFrontend, calculateTotalCharge]);
+
+
+  // Effect to update edit trip form's auto-calculated fields
   useEffect(() => {
-    if (editFormData.from && editFormData.to) {
-      const newRouteCharge = getRouteCharge(editFormData.from, editFormData.to);
-      const newKmTravelled = kmData.find(k => k.start_point === editFormData.from && k.destination_point === editFormData.to)?.km_value || 0;
-      setEditFormData(prevData => ({
-        ...prevData,
-        routeCharge: newRouteCharge,
-        kmTravelled: newKmTravelled
-      }));
-    } else {
-      setEditFormData(prevData => ({ ...prevData, routeCharge: 0, kmTravelled: 0 }));
-    }
-  }, [editFormData.from, editFormData.to, getRouteCharge]);
+    if (editFormData.isManualEdited) return; // Do not auto-calculate if manually edited
+
+    const newRouteCharge = getRouteCharge(editFormData.from, editFormData.to);
+    const newKmTravelled = kmData.find(k => k.start_point === editFormData.from && k.destination_point === editFormData.to)?.km_value || 0;
+
+    // Calculate empty charge for edit form
+    const emptyChargeResult = calculateEmptyChargeFrontend(editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.date);
+    const newEmptyCharge = emptyChargeResult.charge;
+
+    const newTotalCharge = calculateTotalCharge(
+      newRouteCharge,
+      newEmptyCharge,
+      editFormData.overnightStay,
+      editFormData.dayOverDelayed,
+      editFormData.carNo
+    );
+
+    setEditFormData(prevData => ({
+      ...prevData,
+      routeCharge: newRouteCharge,
+      emptyCharge: newEmptyCharge,
+      kmTravelled: newKmTravelled,
+      totalCharge: newTotalCharge,
+    }));
+  }, [editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.overnightStay, editFormData.dayOverDelayed, editFormData.carNo, editFormData.date, editFormData.isManualEdited, getRouteCharge, calculateEmptyChargeFrontend, calculateTotalCharge]);
 
 
   // တွက်ချက်ရန် ခလုတ် နှိပ်သောအခါ လုပ်ဆောင်မည့် function (New Trip)
-  const handleCalculate = async () => {
+  const handleCalculateAndSave = async () => {
     setError(null);
     setSuccessMessage(null);
 
@@ -443,52 +516,41 @@ function HomePage() {
       return;
     }
 
-    const routeCharge = getRouteCharge(formData.from, formData.to);
-    const emptyPickupChargeVal = emptyContainerLocationsData.find(loc => loc.id === formData.emptyContainer)?.charge || 0; // Actual charge from location
-    const emptyDropoffCharge = parseFloat(formData.emptyDropoffCharge || 0);
+    // Determine empty_pickup_charge and empty_dropoff_charge for backend based on emptyCharge and emptyHandlingLocation
+    let empty_pickup_charge_for_backend = 0;
+    let empty_dropoff_charge_for_backend = 0;
+    let remarks_for_backend = formData.remarks;
 
-    let kmTravelled = kmData.find(k => k.start_point === formData.from && k.destination_point === formData.to)?.km_value || 0;
-
-    let remarks = formData.remarks;
-    const isSameDirection = (from, to, emptyLocId) => {
-      const emptyLocName = emptyContainerLocationsData.find(loc => loc.id === emptyLocId)?.name;
-      if (from === 'MIP' && to === 'တောင်ဒဂုံ(ဇုံ ၁/၂/၃)' && emptyLocName === 'DIL/ICH') return true;
-      if (from === 'DIL/ICH' && to === 'သီလဝါ' && emptyLocName === 'MIP') return true;
-      return false;
-    };
-
-    let finalEmptyPickupChargeForCalculation = emptyPickupChargeVal;
-    if (formData.emptyContainer && isSameDirection(formData.from, formData.to, formData.emptyContainer)) {
-        finalEmptyPickupChargeForCalculation = 0; // Set to 0 if same direction for calculation
-        remarks += (remarks ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
+    if (formData.emptyHandlingLocation) {
+      const emptyChargeResult = calculateEmptyChargeFrontend(formData.from, formData.to, formData.emptyHandlingLocation, formData.date);
+      if (emptyChargeResult.type === 'pickup') {
+        empty_pickup_charge_for_backend = emptyChargeResult.charge;
+      } else if (emptyChargeResult.type === 'dropoff') {
+        empty_dropoff_charge_for_backend = emptyChargeResult.charge;
+      }
+      if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'pickup' || emptyChargeResult.type === 'dropoff')) {
+        remarks_for_backend += (remarks_for_backend ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
+      }
     }
-
-    const totalCharge = calculateTotalCharge(
-      routeCharge,
-      emptyDropoffCharge,
-      formData.overnightStay,
-      formData.dayOverDelayed,
-      formData.carNo,
-      formData.emptyContainer // Pass emptyContainerId for same direction logic inside calculateTotalCharge
-    );
 
     const tripDataToSave = {
       date: formData.date,
       carNo: formData.carNo,
       from_location: formData.from,
       to_location: formData.to,
-      routeCharge: routeCharge,
-      empty_pickup_charge: emptyPickupChargeVal, // Store the actual charge from dropdown (even if not used in total for same direction)
-      empty_dropoff_charge: emptyDropoffCharge,
-      overnight_status: formData.overnightStay ? 'အသားအိပ်' : 'No',
-      day_over_status: formData.dayOverDelayed ? 'နေ့ကျော်' : 'No',
-      remarks: remarks,
-      total_charge: totalCharge,
-      km_travelled: kmTravelled,
+      routeCharge: formData.routeCharge, // Use the auto-calculated routeCharge from state
+      empty_pickup_charge: empty_pickup_charge_for_backend, // Send to backend
+      empty_dropoff_charge: empty_dropoff_charge_for_backend, // Send to backend
+      empty_handling_location: formData.emptyHandlingLocation || null, // Send selected empty handling location
+      overnight_status: formData.overnightStay ? 'yes' : 'no', // Send 'yes'/'no'
+      day_over_status: formData.dayOverDelayed ? 'yes' : 'no', // Send 'yes'/'no'
+      remarks: remarks_for_backend,
+      total_charge: formData.totalCharge, // Use the auto-calculated or manually edited totalCharge from state
+      km_travelled: formData.kmTravelled, // Use the auto-calculated kmTravelled from state
       fuel_amount: 0,
       fuel_cost: 0,
       driverName: formData.driverName,
-      is_manual_edited: 0,
+      is_manual_edited: formData.isManualEdited ? 1 : 0, // Send 1 if manually edited, 0 otherwise
     };
 
     try {
@@ -496,25 +558,29 @@ function HomePage() {
 
       if (response.status === 201) {
         setSuccessMessage("ခရီးစဉ်မှတ်တမ်း အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။");
-        // Clear form fields
+        // Clear form fields, resetting isManualEdited to false
         setFormData({
           date: new Date().toISOString().split('T')[0],
           carNo: '',
           from: '',
           to: '',
-          emptyContainer: '',
-          emptyDropoffCharge: 0,
+          emptyHandlingLocation: '',
           overnightStay: false,
           dayOverDelayed: false,
           remarks: '',
           driverName: '',
+          routeCharge: 0,
+          emptyCharge: 0,
+          totalCharge: 0,
+          kmTravelled: 0,
+          isManualEdited: false,
         });
         fetchTrips(); // Refresh data and update filters
       } else {
         setError(`ခရီးစဉ်မှတ်တမ်း ထည့်သွင်းရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${response.data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      setError(`ခရီးစဉ်မှတ်တမ်း ထည့်သွင်းရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${err.message}`);
+      setError(`ခရီးစဉ်မှတ်တမ်း ထည့်သွင်းရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${err.response?.data?.error || err.message}`);
       console.error("Error saving trip:", err);
     }
   };
@@ -527,16 +593,16 @@ function HomePage() {
       carNo: trip.car_no,
       from: trip.from_location,
       to: trip.to_location,
-      // Map empty_pickup_charge back to emptyContainer ID for dropdown
-      emptyContainer: emptyContainerLocationsData.find(loc => loc.charge === trip.empty_pickup_charge)?.id || '',
-      overnightStay: trip.overnight_status === 'အသားအိပ်',
-      dayOverDelayed: trip.day_over_status === 'နေ့ကျော်',
+      emptyHandlingLocation: trip.empty_handling_location || '', // Set empty handling location
+      overnightStay: trip.overnight_status === 'yes', // Convert 'yes'/'no' to boolean
+      dayOverDelayed: trip.day_over_status === 'yes', // Convert 'yes'/'no' to boolean
       remarks: trip.remarks || '',
       driverName: trip.driver_name || '',
-      routeCharge: trip.route_charge, // Display current value, will be recalculated on save
-      emptyPickupCharge: trip.empty_pickup_charge, // Display current value, will be recalculated on save
-      emptyDropoffCharge: trip.empty_dropoff_charge,
-      kmTravelled: trip.km_travelled, // Display current value, will be recalculated on save
+      routeCharge: trip.route_charge,
+      emptyCharge: (trip.empty_pickup_charge || 0) + (trip.empty_dropoff_charge || 0), // Combine for display
+      totalCharge: trip.total_charge,
+      kmTravelled: trip.km_travelled,
+      isManualEdited: trip.is_manual_edited === 1, // Convert 0/1 to boolean
     });
     setEditDialogOpen(true); // Open the edit dialog
   };
@@ -551,71 +617,69 @@ function HomePage() {
       return;
     }
 
-    // Recalculate values based on current editFormData
-    const calculatedRouteCharge = getRouteCharge(editFormData.from, editFormData.to);
-    const emptyPickupChargeVal = emptyContainerLocationsData.find(loc => loc.id === editFormData.emptyContainer)?.charge || 0;
-    const calculatedKmTravelled = kmData.find(k => k.start_point === editFormData.from && k.destination_point === editFormData.to)?.km_value || 0;
-    const emptyDropoffCharge = parseFloat(editFormData.emptyDropoffCharge || 0);
+    // Determine empty_pickup_charge and empty_dropoff_charge for backend based on emptyCharge and emptyHandlingLocation
+    let empty_pickup_charge_for_backend = 0;
+    let empty_dropoff_charge_for_backend = 0;
+    let remarks_for_backend = editFormData.remarks;
 
-    let remarks = editFormData.remarks;
-    const isSameDirection = (from, to, emptyLocId) => {
-      const emptyLocName = emptyContainerLocationsData.find(loc => loc.id === emptyLocId)?.name;
-      if (from === 'MIP' && to === 'တောင်ဒဂုံ(ဇုံ ၁/၂/၃)' && emptyLocName === 'DIL/ICH') return true;
-      if (from === 'DIL/ICH' && to === 'သီလဝါ' && emptyLocName === 'MIP') return true;
-      return false;
-    };
-
-    // This variable is used for internal calculation, not for storage
-    let finalEmptyPickupChargeForCalculation = emptyPickupChargeVal;
-    if (editFormData.emptyContainer && isSameDirection(editFormData.from, editFormData.to, editFormData.emptyContainer)) {
-        finalEmptyPickupChargeForCalculation = 0;
-        remarks += (remarks ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
+    if (!editFormData.isManualEdited && editFormData.emptyHandlingLocation) {
+        // Recalculate empty charges if not manually edited
+        const emptyChargeResult = calculateEmptyChargeFrontend(editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.date);
+        if (emptyChargeResult.type === 'pickup') {
+            empty_pickup_charge_for_backend = emptyChargeResult.charge;
+        } else if (emptyChargeResult.type === 'dropoff') {
+            empty_dropoff_charge_for_backend = emptyChargeResult.charge;
+        }
+        if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'pickup' || emptyChargeResult.type === 'dropoff')) {
+            remarks_for_backend += (remarks_for_backend ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
+        }
+    } else {
+        // If manually edited, use the combined emptyCharge from editFormData for both pickup/dropoff
+        // This is a simplification; ideally, you'd store/edit pickup and dropoff separately if manual.
+        // For now, we'll put the combined value into empty_pickup_charge and set dropoff to 0 if manually edited.
+        // Or, if the backend handles it as a single 'emptyCharge' field, that's easier.
+        // Given the backend expects empty_pickup_charge and empty_dropoff_charge,
+        // if isManualEdited, we should assume the user manually set the *total* empty charge,
+        // and for simplicity, assign it to pickup and set dropoff to 0.
+        // A better UI would let them manually set pickup and dropoff separately.
+        empty_pickup_charge_for_backend = parseFloat(editFormData.emptyCharge) || 0;
+        empty_dropoff_charge_for_backend = 0; // Assuming combined goes to pickup for simplicity
     }
 
-    const totalCharge = calculateTotalCharge(
-      calculatedRouteCharge,
-      emptyDropoffCharge,
-      editFormData.overnightStay,
-      editFormData.dayOverDelayed,
-      editFormData.carNo,
-      editFormData.emptyContainer // Pass emptyContainerId for same direction logic inside calculateTotalCharge
-    );
 
     const tripDataToUpdate = {
       date: editFormData.date,
       carNo: editFormData.carNo,
       from_location: editFormData.from,
       to_location: editFormData.to,
-      routeCharge: calculatedRouteCharge,
-      empty_pickup_charge: emptyPickupChargeVal, // Store the actual charge from dropdown
-      empty_dropoff_charge: emptyDropoffCharge,
-      overnight_status: editFormData.overnightStay ? 'အသားအိပ်' : 'No',
-      day_over_status: editFormData.dayOverDelayed ? 'နေ့ကျော်' : 'No',
-      remarks: remarks,
-      total_charge: totalCharge,
-      km_travelled: calculatedKmTravelled,
-      fuel_amount: 0, // Not editable in this form
-      fuel_cost: 0,   // Not editable in this form
+      routeCharge: editFormData.routeCharge, // Use the auto-calculated routeCharge from state
+      empty_pickup_charge: empty_pickup_charge_for_backend, // Send to backend
+      empty_dropoff_charge: empty_dropoff_charge_for_backend, // Send to backend
+      empty_handling_location: editFormData.emptyHandlingLocation || null, // Send selected empty handling location
+      overnight_status: editFormData.overnightStay ? 'yes' : 'no',
+      day_over_status: editFormData.dayOverDelayed ? 'yes' : 'no',
+      remarks: remarks_for_backend,
+      total_charge: editFormData.totalCharge, // Use the auto-calculated or manually edited totalCharge from state
+      km_travelled: editFormData.kmTravelled, // Use the auto-calculated kmTravelled from state
+      fuel_amount: 0,
+      fuel_cost: 0,
       driverName: editFormData.driverName,
-      is_manual_edited: 1, // Mark as manually edited
+      is_manual_edited: editFormData.isManualEdited ? 1 : 0,
     };
 
     try {
-      // NOTE: This PUT API endpoint must exist in your backend/server.js for this to work.
-      // Based on your previous instruction, this API was removed.
-      // If you want this functionality, you need to re-add the PUT API in server.js.
       const response = await axios.put(`${API_BASE_URL}/api/trips/${editingTripId}`, tripDataToUpdate);
 
       if (response.status === 200) {
         setSuccessMessage('ခရီးစဉ်မှတ်တမ်း အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ။');
         setEditingTripId(null);
-        setEditDialogOpen(false); // Close the edit dialog
-        fetchTrips(); // Refresh data and update filters
+        setEditDialogOpen(false);
+        fetchTrips();
       } else {
         setError(`ခရီးစဉ်မှတ်တမ်း ပြင်ဆင်ရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${response.data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      setError(`ခရီးစဉ်မှတ်တမ်း ပြင်ဆင်ရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${err.message}. Backend API (PUT /api/trips/:id) မရှိခြင်းကြောင့် ဖြစ်နိုင်ပါသည်။`);
+      setError(`ခရီးစဉ်မှတ်တမ်း ပြင်ဆင်ရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${err.response?.data?.error || err.message}`);
       console.error('Error saving trip edit:', err);
     }
   };
@@ -623,11 +687,13 @@ function HomePage() {
   // Handle Cancel Edit button click (from Dialog)
   const handleCancelEdit = () => {
     setEditingTripId(null);
-    setEditDialogOpen(false); // Close the edit dialog
-    setEditFormData({ // Reset edit form states
-      date: '', carNo: '', from: '', to: '', emptyContainer: '',
+    setEditDialogOpen(false);
+    // Reset edit form states, resetting isManualEdited to false
+    setEditFormData({
+      date: '', carNo: '', from: '', to: '', emptyHandlingLocation: '',
       overnightStay: false, dayOverDelayed: false, remarks: '', driverName: '',
-      routeCharge: 0, emptyPickupCharge: 0, emptyDropoffCharge: 0, kmTravelled: 0,
+      routeCharge: 0, emptyCharge: 0, totalCharge: 0, kmTravelled: 0,
+      isManualEdited: false,
     });
   };
 
@@ -642,18 +708,15 @@ function HomePage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      // NOTE: This DELETE API endpoint must exist in your backend/server.js for this to work.
-      // Based on your previous instruction, this API was removed.
-      // If you want this functionality, you need to re-add the DELETE API in server.js.
       const response = await axios.delete(`${API_BASE_URL}/api/trips/${tripToDelete.id}`);
       if (response.status === 200) {
         setSuccessMessage('ခရီးစဉ်မှတ်တမ်းကို ဖျက်ပစ်ပြီးပါပြီ။');
-        fetchTrips(); // Refresh data and update filters
+        fetchTrips();
       } else {
         setError(`ခရီးစဉ်မှတ်တမ်းကို ဖျက်ပစ်ရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${response.data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      setError(`ခရီးစဉ်မှတ်တမ်းကို ဖျက်ပစ်ရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${err.message}. Backend API (DELETE /api/trips/:id) မရှိခြင်းကြောင့် ဖြစ်နိုင်ပါသည်။`);
+      setError(`ခရီးစဉ်မှတ်တမ်းကို ဖျက်ပစ်ရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${err.response?.data?.error || err.message}`);
       console.error('Error deleting trip:', err);
     } finally {
       setDeleteConfirmOpen(false);
@@ -673,17 +736,18 @@ function HomePage() {
       "No.": trip.id,
       "Date": trip.date,
       "Car No": trip.car_no,
+      "ယာဉ်မောင်း": trip.driver_name,
       "မှ (From)": trip.from_location,
       "သို့ (To)": trip.to_location,
-      "ကားခ (Route Charge)": trip.route_charge,
-      "အခွံတင်/ချ (Empty Charge)": trip.empty_pickup_charge, // Still exporting this, though its calculation might be 0
-      "အခွံချခ (Empty Drop-off Charge)": trip.empty_dropoff_charge,
+      "လမ်းကြောင်းခ (Route Charge)": trip.route_charge,
+      "အခွံတင်/ချ နေရာ": trip.empty_handling_location || '', // NEW: Export empty handling location
+      "အခွံတင်ခ (Empty Pickup Charge)": trip.empty_pickup_charge, // Keep for export detail
+      "အခွံချခ (Empty Drop-off Charge)": trip.empty_dropoff_charge, // Keep for export detail
       "အသား/အခွံ အိပ်": trip.overnight_status,
       "နေ့ကျော်/ပြီး": trip.day_over_status,
       "မှတ်ချက်": trip.remarks,
       "စုစုပေါင်း": trip.total_charge,
       "KM သွားခဲ့မှု": trip.km_travelled,
-      "ယာဉ်မောင်း": trip.driver_name,
     })));
 
     const workbook = XLSX.utils.book_new();
@@ -845,68 +909,70 @@ function HomePage() {
             variant="outlined"
             size="small"
             InputProps={{
-              readOnly: true, // Make it read-only
+              readOnly: true,
               endAdornment: (
                 <Typography variant="body2" color="textSecondary">
                   {formData.routeCharge ? formatMMK(formData.routeCharge) : ''}
                 </Typography>
               ),
             }}
-            className="bg-gray-100 rounded-md" // Tailwind class for light grey background
+            className="bg-gray-100 rounded-md"
           />
         </div>
 
-        {/* အခွံတင်/ချ (Empty Container Pickup/Drop-off) */}
-        <div>
-          <label htmlFor="emptyContainer" className="block text-sm font-medium text-gray-700 mb-1">
-            အခွံတင်/ချ (Empty Container)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="emptyContainer"
-              name="emptyContainer"
-              value={formData.emptyContainer}
-              onChange={handleChange}
-            >
-              <MenuItem value="">နေရာ ရွေးပါ (မရှိလျှင် မရွေးပါ)</MenuItem>
-              {emptyContainerLocationsData.map((location, index) => (
-                <MenuItem key={index} value={location.id}>
-                  {location.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
+        {/* NEW: အခွံတင်/ချ နေရာ (Empty Handling Location) */}
+        {/* Only show if "from" or "to" is a port */}
+        {(portLocations.has(formData.from) || portLocations.has(formData.to)) && (
+          <div>
+            <label htmlFor="emptyHandlingLocation" className="block text-sm font-medium text-gray-700 mb-1">
+              အခွံတင်/ချ နေရာ
+            </label>
+            <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+              <Select
+                id="emptyHandlingLocation"
+                name="emptyHandlingLocation"
+                value={formData.emptyHandlingLocation}
+                onChange={handleChange}
+              >
+                <MenuItem value=""><em>ရွေးချယ်ပါ (မရှိလျှင် မရွေးပါ)</em></MenuItem>
+                {emptyLocationsOptions.map((loc, index) => (
+                  <MenuItem key={index} value={loc}>
+                    {loc}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </div>
+        )}
 
-        {/* အခွံချခ (Empty Drop-off Charge) - Manual input */}
-        <div>
-          <label htmlFor="emptyDropoffCharge" className="block text-sm font-medium text-gray-700 mb-1">
-            အခွံချခ
-          </label>
-          <TextField
-            type="text"
-            id="emptyDropoffCharge"
-            name="emptyDropoffCharge"
-            value={formData.emptyDropoffCharge}
-            onChange={(e) => {
-              const rawValue = e.target.value.replace(/,/g, '');
-              if (!isNaN(rawValue) || rawValue === '') {
-                setFormData(prev => ({ ...prev, emptyDropoffCharge: rawValue }));
-              }
-            }}
-            fullWidth
-            variant="outlined"
-            size="small"
-            InputProps={{
-              endAdornment: (
-                <Typography variant="body2" color="textSecondary">
-                  {formData.emptyDropoffCharge && !isNaN(parseFloat(formData.emptyDropoffCharge)) ? formatMMK(parseFloat(formData.emptyDropoffCharge)) : ''}
-                </Typography>
-              ),
-            }}
-            className="rounded-md"
-          />
-        </div>
+        {/* NEW: အခွံတင်/ချ (Empty Charge) - Combined display, auto-calculated */}
+        {/* Only show if "from" or "to" is a port */}
+        {(portLocations.has(formData.from) || portLocations.has(formData.to)) && (
+          <div>
+            <label htmlFor="emptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
+              အခွံတင်/ချ <span className="text-xs text-gray-500">(Auto)</span>
+            </label>
+            <TextField
+              type="text"
+              id="emptyCharge"
+              name="emptyCharge"
+              value={formData.emptyCharge || ''}
+              fullWidth
+              variant="outlined"
+              size="small"
+              InputProps={{
+                readOnly: true,
+                endAdornment: (
+                  <Typography variant="body2" color="textSecondary">
+                    {formData.emptyCharge ? formatMMK(formData.emptyCharge) : ''}
+                  </Typography>
+                ),
+              }}
+              className="bg-gray-100 rounded-md"
+            />
+          </div>
+        )}
+
 
         {/* KM (ခရီးအကွာအဝေး) - Display only */}
         <div>
@@ -917,41 +983,47 @@ function HomePage() {
             type="number"
             id="kmTravelled"
             name="kmTravelled"
-            value={kmData.find(k => k.start_point === formData.from && k.destination_point === formData.to)?.km_value || ''}
+            value={formData.kmTravelled || ''}
             fullWidth
             variant="outlined"
             size="small"
             InputProps={{ readOnly: true }}
-            className="bg-gray-100 rounded-md" // Tailwind class for light grey background
+            className="bg-gray-100 rounded-md"
           />
         </div>
 
         {/* အသားအိပ် (Overnight Stay with Cargo) */}
         <div className="flex items-center">
-          <Checkbox
-            id="overnightStay"
-            name="overnightStay"
-            checked={formData.overnightStay}
-            onChange={handleChange}
-            sx={{ p: 0, mr: 1 }}
+          <FormControlLabel
+            control={
+              <Checkbox
+                id="overnightStay"
+                name="overnightStay"
+                checked={formData.overnightStay}
+                onChange={handleChange}
+                sx={{ p: 0, mr: 1 }}
+              />
+            }
+            label="အသားအိပ် (Overnight Stay with Cargo)"
+            className="text-sm font-medium text-gray-700"
           />
-          <label htmlFor="overnightStay" className="text-sm font-medium text-gray-700">
-            အသားအိပ် (Overnight Stay with Cargo)
-          </label>
         </div>
 
         {/* နေ့ကျော်/ပြီး (Day Over/Delayed) */}
         <div className="flex items-center">
-          <Checkbox
-            id="dayOverDelayed"
-            name="dayOverDelayed"
-            checked={formData.dayOverDelayed}
-            onChange={handleChange}
-            sx={{ p: 0, mr: 1 }}
+          <FormControlLabel
+            control={
+              <Checkbox
+                id="dayOverDelayed"
+                name="dayOverDelayed"
+                checked={formData.dayOverDelayed}
+                onChange={handleChange}
+                sx={{ p: 0, mr: 1 }}
+              />
+            }
+            label="နေ့ကျော်/ပြီး (Day Over/Delayed)"
+            className="text-sm font-medium text-gray-700"
           />
-          <label htmlFor="dayOverDelayed" className="text-sm font-medium text-gray-700">
-            နေ့ကျော်/ပြီး (Day Over/Delayed)
-          </label>
         </div>
 
         {/* Remarks (spanning all columns) */}
@@ -977,17 +1049,22 @@ function HomePage() {
 
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 2 }}>
         <Typography variant="h6" sx={{ mr: 2, color: 'text.primary' }}>
-          စုစုပေါင်း: {formatMMK(calculateTotalCharge(
-            formData.routeCharge,
-            formData.emptyDropoffCharge,
-            formData.overnightStay,
-            formData.dayOverDelayed,
-            formData.carNo,
-            formData.emptyContainer // Pass emptyContainerId for same direction logic
-          ))}
+          စုစုပေါင်း: {formatMMK(formData.totalCharge)}
         </Typography>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={formData.isManualEdited}
+              onChange={(e) => setFormData(prev => ({ ...prev, isManualEdited: e.target.checked }))}
+              name="isManualEdited"
+              color="primary"
+            />
+          }
+          label="စုစုပေါင်းကျသင့်ငွေကို ကိုယ်တိုင်ပြင်မည်"
+          sx={{ mr: 2 }}
+        />
         <Button
-          onClick={handleCalculate}
+          onClick={handleCalculateAndSave}
           variant="contained"
           color="primary"
           sx={{ py: 1.5, px: 4 }}
@@ -1028,13 +1105,12 @@ function HomePage() {
               value={filterYear}
               onChange={(e) => setFilterYear(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
             >
-              {/* Filter out null/undefined values before mapping */}
+              <MenuItem value="">အားလုံး</MenuItem>
               {availableYears.filter(year => year !== null && year !== undefined).map((year, index) => (
                 <MenuItem key={index} value={year}>
                   {year}
                 </MenuItem>
               ))}
-              <MenuItem value="">အားလုံး</MenuItem> {/* "Choose all" option */}
             </Select>
           </FormControl>
         </div>
@@ -1051,13 +1127,12 @@ function HomePage() {
               value={filterMonth}
               onChange={(e) => setFilterMonth(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
             >
-              {/* Filter out null/undefined values before mapping */}
+              <MenuItem value="">အားလုံး</MenuItem>
               {monthNames.filter(month => month !== null && month !== undefined).map((month) => (
                 <MenuItem key={month.value} value={month.value}>
                   {month.label}
                 </MenuItem>
               ))}
-              <MenuItem value="">အားလုံး</MenuItem> {/* "Choose all" option */}
             </Select>
           </FormControl>
         </div>
@@ -1074,13 +1149,12 @@ function HomePage() {
               value={filterCarNo}
               onChange={(e) => setFilterCarNo(e.target.value)}
             >
-              {/* Filter out null/undefined values before mapping */}
+              <MenuItem value="">အားလုံး</MenuItem>
               {uniqueCarNumbersForFilter.filter(carNo => carNo !== null && carNo !== undefined).map((carNo, index) => (
                 <MenuItem key={index} value={carNo}>
                   {carNo}
                 </MenuItem>
               ))}
-              <MenuItem value="">အားလုံး</MenuItem> {/* "Choose all" option */}
             </Select>
           </FormControl>
         </div>
@@ -1110,10 +1184,9 @@ function HomePage() {
                 <TableCell sx={{ fontWeight: 'bold' }}>မှ (From)</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>သို့ (To)</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>လမ်းကြောင်းခ</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ</TableCell> {/* Renamed */}
-                <TableCell sx={{ fontWeight: 'bold' }}>အခွံချခ</TableCell> {/* Renamed */}
-                <TableCell sx={{ fontWeight: 'bold' }}>အသား/အခွံ အိပ်</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>နေ့ကျော်/ပြီး</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ</TableCell> {/* Combined column */}
+                <TableCell sx={{ fontWeight: 'bold' }}>ညအိပ်ခ</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>ရက်ကျော်/ပြီး</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>မှတ်ချက်</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>စုစုပေါင်း</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>KM သွားခဲ့မှု</TableCell>
@@ -1123,13 +1196,14 @@ function HomePage() {
             <TableBody>
               {filteredTrips.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={16} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  <TableCell colSpan={15} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                     တွက်ချက်ထားသော ရလဒ်များ မရှိသေးပါ သို့မဟုတ် Filter နှင့် ကိုက်ညီသော Data မရှိပါ။
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredTrips.map((trip) => {
                   const isSelected = selectedRows.has(trip.id);
+                  const combinedEmptyCharge = (trip.empty_pickup_charge || 0) + (trip.empty_dropoff_charge || 0);
                   return (
                     <TableRow
                       key={trip.id}
@@ -1149,10 +1223,9 @@ function HomePage() {
                       <TableCell>{trip.from_location}</TableCell>
                       <TableCell>{trip.to_location}</TableCell>
                       <TableCell>{formatMMK(trip.route_charge)}</TableCell>
-                      <TableCell>{formatMMK(trip.empty_pickup_charge)}</TableCell> {/* Display empty_pickup_charge */}
-                      <TableCell>{formatMMK(trip.empty_dropoff_charge)}</TableCell>
-                      <TableCell>{trip.overnight_status}</TableCell>
-                      <TableCell>{trip.day_over_status}</TableCell>
+                      <TableCell>{formatMMK(combinedEmptyCharge)}</TableCell> {/* Display combined empty charge */}
+                      <TableCell>{trip.overnight_status === 'yes' ? 'ရှိသည်' : 'မရှိပါ'}</TableCell>
+                      <TableCell>{trip.day_over_status === 'yes' ? 'ရှိသည်' : 'မရှိပါ'}</TableCell>
                       <TableCell>{trip.remarks}</TableCell>
                       <TableCell>{formatMMK(trip.total_charge)}</TableCell>
                       <TableCell>{trip.km_travelled}</TableCell>
@@ -1173,13 +1246,13 @@ function HomePage() {
               {/* Grand Total Row */}
               {filteredTrips.length > 0 && (
                 <TableRow sx={{ backgroundColor: '#e0e0e0', fontWeight: 'bold', borderTop: '2px solid #ccc' }}>
-                  <TableCell colSpan={13} align="right" sx={{ fontWeight: 'bold' }}>
+                  <TableCell colSpan={12} align="right" sx={{ fontWeight: 'bold' }}>
                     စုစုပေါင်း (Grand Total):
                   </TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>
-                    {grandTotalCharge.toLocaleString()} ({formatMMK(grandTotalCharge)})
+                    {formatMMK(grandTotalCharge)}
                   </TableCell>
-                  <TableCell colSpan={2}></TableCell> {/* Empty cells for remaining columns */}
+                  <TableCell colSpan={2}></TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -1286,71 +1359,92 @@ function HomePage() {
                 ),
               }}
             />
-            <FormControl fullWidth variant="outlined" size="small">
-              <InputLabel>အခွံတင်/ချ (Empty Container)</InputLabel>
-              <Select
-                name="emptyContainer"
-                value={editFormData.emptyContainer}
-                onChange={handleEditChange}
-                label="အခွံတင်/ချ (Empty Container)"
-              >
-                <MenuItem value="">နေရာ ရွေးပါ (မရှိလျှင် မရွေးပါ)</MenuItem>
-                {emptyContainerLocationsData.map((location, index) => (
-                  <MenuItem key={index} value={location.id}>
-                    {location.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              label="အခွံချခ"
-              type="text"
-              name="emptyDropoffCharge"
-              value={editFormData.emptyDropoffCharge}
-              onChange={(e) => {
-                const rawValue = e.target.value.replace(/,/g, '');
-                if (!isNaN(rawValue) || rawValue === '') {
-                  setEditFormData(prev => ({ ...prev, emptyDropoffCharge: rawValue }));
-                }
-              }}
-              fullWidth
-              variant="outlined"
-              size="small"
-              InputProps={{
-                endAdornment: (
-                  <Typography variant="body2" color="textSecondary">
-                    {editFormData.emptyDropoffCharge && !isNaN(parseFloat(editFormData.emptyDropoffCharge)) ? formatMMK(parseFloat(editFormData.emptyDropoffCharge)) : ''}
-                  </Typography>
-                ),
-              }}
-            />
+            {/* NEW: အခွံတင်/ချ နေရာ (Empty Handling Location) for Edit Dialog */}
+            {(portLocations.has(editFormData.from) || portLocations.has(editFormData.to)) && (
+              <FormControl fullWidth variant="outlined" size="small">
+                <InputLabel>အခွံတင်/ချ နေရာ</InputLabel>
+                <Select
+                  name="emptyHandlingLocation"
+                  value={editFormData.emptyHandlingLocation}
+                  onChange={handleEditChange}
+                  label="အခွံတင်/ချ နေရာ"
+                >
+                  <MenuItem value=""><em>ရွေးချယ်ပါ (မရှိလျှင် မရွေးပါ)</em></MenuItem>
+                  {emptyLocationsOptions.map((loc, index) => (
+                    <MenuItem key={index} value={loc}>
+                      {loc}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {/* NEW: အခွံတင်/ချ (Empty Charge) for Edit Dialog */}
+            {(portLocations.has(editFormData.from) || portLocations.has(editFormData.to)) && (
+              <div>
+                <label htmlFor="editEmptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
+                  အခွံတင်/ချ
+                </label>
+                <TextField
+                  type="text"
+                  id="editEmptyCharge"
+                  name="emptyCharge"
+                  value={editFormData.emptyCharge || ''}
+                  onChange={(e) => {
+                    const rawValue = e.target.value.replace(/,/g, '');
+                    if (!isNaN(rawValue) || rawValue === '') {
+                      setEditFormData(prev => ({ ...prev, emptyCharge: rawValue, isManualEdited: true }));
+                    }
+                  }}
+                  fullWidth
+                  variant="outlined"
+                  size="small"
+                  InputProps={{
+                    readOnly: !editFormData.isManualEdited, // Read-only if not manually edited
+                    endAdornment: (
+                      <Typography variant="body2" color="textSecondary">
+                        {editFormData.emptyCharge && !isNaN(parseFloat(editFormData.emptyCharge)) ? formatMMK(parseFloat(editFormData.emptyCharge)) : ''}
+                      </Typography>
+                    ),
+                  }}
+                  className={!editFormData.isManualEdited ? "bg-gray-100 rounded-md" : "rounded-md"}
+                />
+              </div>
+            )}
+
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Checkbox
-                name="overnightStay"
-                checked={editFormData.overnightStay}
-                onChange={handleEditChange}
-                sx={{ p: 0, mr: 1 }}
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    name="overnightStay"
+                    checked={editFormData.overnightStay}
+                    onChange={handleEditChange}
+                    sx={{ p: 0, mr: 1 }}
+                  />
+                }
+                label="အသားအိပ် (Overnight Stay)"
+                className="text-sm font-medium text-gray-700"
               />
-              <label htmlFor="overnightStay" className="text-sm font-medium text-gray-700">
-                အသားအိပ် (Overnight Stay)
-              </label>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Checkbox
-                name="dayOverDelayed"
-                checked={editFormData.dayOverDelayed}
-                onChange={handleEditChange}
-                sx={{ p: 0, mr: 1 }}
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    name="dayOverDelayed"
+                    checked={editFormData.dayOverDelayed}
+                    onChange={handleEditChange}
+                    sx={{ p: 0, mr: 1 }}
+                  />
+                }
+                label="နေ့ကျော်/ပြီး (Day Over)"
+                className="text-sm font-medium text-gray-700"
               />
-              <label htmlFor="dayOverDelayed" className="text-sm font-medium text-gray-700">
-                နေ့ကျော်/ပြီး (Day Over)
-              </label>
             </Box>
             <TextField
               label="KM (ခရီးအကွာအဝေး)"
               type="number"
               name="kmTravelled"
-              value={editFormData.kmTravelled}
+              value={editFormData.kmTravelled || ''}
               fullWidth
               variant="outlined"
               size="small"
@@ -1366,20 +1460,25 @@ function HomePage() {
               fullWidth
               variant="outlined"
               size="small"
-              sx={{ gridColumn: '1 / -1' }} // Span all columns
+              sx={{ gridColumn: '1 / -1' }}
             />
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 3 }}>
             <Typography variant="h6" sx={{ mr: 2, color: 'text.primary' }}>
-              စုစုပေါင်း: {formatMMK(calculateTotalCharge(
-                editFormData.routeCharge,
-                editFormData.emptyDropoffCharge,
-                editFormData.overnightStay,
-                editFormData.dayOverDelayed,
-                editFormData.carNo,
-                editFormData.emptyContainer // Pass emptyContainerId for same direction logic
-              ))}
+              စုစုပေါင်း: {formatMMK(editFormData.totalCharge)}
             </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={editFormData.isManualEdited}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, isManualEdited: e.target.checked }))}
+                  name="isManualEdited"
+                  color="primary"
+                />
+              }
+              label="စုစုပေါင်းကျသင့်ငွေကို ကိုယ်တိုင်ပြင်မည်"
+              sx={{ mr: 2 }}
+            />
           </Box>
         </DialogContent>
         <DialogActions>
