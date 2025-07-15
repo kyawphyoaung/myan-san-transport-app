@@ -194,7 +194,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
         CREATE TABLE IF NOT EXISTS drivers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL UNIQUE,
-          monthly_salary INTEGER,
+          monthly_salary INTEGER, -- This will be the *current* effective salary, updated by salary history
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -202,6 +202,24 @@ const db = new sqlite3.Database(dbPath, (err) => {
         if (err) console.error("Error creating drivers table:", err.message);
         else console.log("Drivers table created or already exists.");
       });
+
+      // NEW: Driver Salary History Table
+      db.run(`
+        CREATE TABLE IF NOT EXISTS driver_salary_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          driver_id INTEGER NOT NULL,
+          salary_amount INTEGER NOT NULL,
+          effective_start_date TEXT NOT NULL, -- When this salary became effective (YYYY-MM-DD)
+          effective_end_date TEXT,            -- When this salary ended (YYYY-MM-DD, null if current)
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+          UNIQUE (driver_id, effective_start_date) -- A driver can only have one salary start on a given date
+        )
+      `, (err) => {
+        if (err) console.error("Error creating driver_salary_history table:", err.message);
+        else console.log("Driver_salary_history table created or already exists.");
+      });
+
 
       // Settings Table (for configurable amounts like overnight/dayover charges)
       db.run(`
@@ -294,18 +312,41 @@ const db = new sqlite3.Database(dbPath, (err) => {
       });
 
       // Car Driver Assignments Table
+      // Modified to include end_date for historical tracking
+      // Removed UNIQUE(car_no) and added UNIQUE(car_no, assigned_date)
       db.run(`
         CREATE TABLE IF NOT EXISTS car_driver_assignments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          car_no TEXT NOT NULL UNIQUE,
+          car_no TEXT NOT NULL,
           driver_name TEXT NOT NULL,
           assigned_date TEXT NOT NULL,
+          end_date TEXT, -- New column for end date of assignment (null if current)
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE
+          FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE,
+          UNIQUE (car_no, assigned_date) -- Ensure unique assignment for a car on a given date
         )
       `, (err) => {
         if (err) console.error("Error creating car_driver_assignments table:", err.message);
-        else console.log("Car_driver_assignments table created or already exists.");
+        else {
+          console.log("Car_driver_assignments table created or already exists.");
+          // Add end_date column if it doesn't exist (for existing databases)
+          db.all(`PRAGMA table_info(car_driver_assignments)`, (err, columns) => {
+            if (err) {
+              console.error("Error checking table info for car_driver_assignments:", err.message);
+              return;
+            }
+            const endDateExists = columns.some(col => col.name === 'end_date');
+            if (!endDateExists) {
+              db.run(`ALTER TABLE car_driver_assignments ADD COLUMN end_date TEXT`, (err) => {
+                if (err) console.error("Error adding end_date column to car_driver_assignments:", err.message);
+                else console.log("Added end_date column to car_driver_assignments table.");
+              });
+            }
+            // Note: Altering UNIQUE constraints directly in SQLite is tricky.
+            // If the database already exists with UNIQUE(car_no), it might need manual intervention.
+            // For a fresh database (as per user's request), this CREATE TABLE IF NOT EXISTS is sufficient.
+          });
+        }
       });
 
       // General Expenses Table
@@ -1199,33 +1240,70 @@ app.get('/api/trips/:id', async (req, res) => {
 
 // API endpoint to add a new driver
 app.post('/api/drivers', async (req, res) => {
-  const { name, monthly_salary } = req.body;
+  const { name, monthly_salary, salaryEffectiveDate } = req.body;
   if (!name) {
     return res.status(400).json({ error: "Driver name is required." });
   }
 
+  // Validate and parse monthly_salary
+  let parsedMonthlySalary = null;
+  if (monthly_salary !== undefined && monthly_salary !== null && monthly_salary !== '') {
+    parsedMonthlySalary = parseFloat(monthly_salary);
+    if (isNaN(parsedMonthlySalary) || parsedMonthlySalary < 0) { // Ensure non-negative
+      return res.status(400).json({ error: "Monthly salary must be a valid non-negative number." });
+    }
+  } else {
+    // If monthly_salary is explicitly empty/null, treat as 0 or allow null depending on schema
+    parsedMonthlySalary = 0; // Default to 0 if not provided
+  }
+
   try {
+    // Check if driver name already exists
+    const existingDriver = await dbGet(`SELECT id FROM drivers WHERE name = ?`, [name]);
+    if (existingDriver) {
+      return res.status(409).json({ error: "Driver with this name already exists." });
+    }
+
     const result = await dbRun(`
       INSERT INTO drivers (name, monthly_salary)
       VALUES (?, ?)
-    `, [name, monthly_salary]);
+    `, [name, parsedMonthlySalary]); // Use parsedMonthlySalary here
+
+    // Also add an initial salary record if a valid salary was provided (or default 0)
+    if (parsedMonthlySalary !== null) { // This will always be true if parsedMonthlySalary is set to 0 or a number
+      const today = new Date().toISOString().split('T')[0];
+      await dbRun(`
+        INSERT INTO driver_salary_history (driver_id, salary_amount, effective_start_date, effective_end_date)
+        VALUES (?, ?, ?, NULL)
+      `, [result.id, parsedMonthlySalary, salaryEffectiveDate]);
+    }
+
     res.status(201).json({
       message: "Driver added successfully",
-      id: result.id
+      id: result.id // Return 'id' as expected by frontend
     });
   } catch (err) {
-    if (err.message.includes("UNIQUE constraint failed: drivers.name")) {
-      return res.status(409).json({ error: "Driver with this name already exists." });
-    }
     console.error("Error inserting driver:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// API endpoint to get all drivers
+// API endpoint to get all drivers (now includes current monthly_salary from history)
 app.get('/api/drivers', async (req, res) => {
   try {
-    const rows = await dbAll("SELECT * FROM drivers ORDER BY name ASC");
+    const query = `
+      SELECT
+          d.id,
+          d.name,
+          d.created_at,
+          d.updated_at,
+          (SELECT salary_amount FROM driver_salary_history
+           WHERE driver_id = d.id AND effective_end_date IS NULL
+           ORDER BY effective_start_date DESC LIMIT 1) AS monthly_salary
+      FROM drivers d
+      ORDER BY d.name ASC;
+    `;
+    const rows = await dbAll(query);
     res.json({
       message: "success",
       data: rows
@@ -1235,18 +1313,24 @@ app.get('/api/drivers', async (req, res) => {
   }
 });
 
-// API endpoint to update a driver
+// API endpoint to update a driver (only name can be updated directly here)
 app.put('/api/drivers/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, monthly_salary } = req.body;
+  const { name } = req.body; // monthly_salary is now handled by salary history
 
   if (!name) {
     return res.status(400).json({ error: "Driver name is required." });
   }
 
   try {
-    const result = await dbRun(`UPDATE drivers SET name = ?, monthly_salary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [name, monthly_salary, id]
+    // Check for duplicate name if changing
+    const existingDriver = await dbGet(`SELECT id FROM drivers WHERE name = ? AND id != ?`, [name, id]);
+    if (existingDriver) {
+      return res.status(409).json({ error: "Driver with this name already exists." });
+    }
+
+    const result = await dbRun(`UPDATE drivers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [name, id]
     );
     if (result.changes === 0) {
       return res.status(404).json({ message: "Driver not found." });
@@ -1256,9 +1340,6 @@ app.put('/api/drivers/:id', async (req, res) => {
       id: id
     });
   } catch (err) {
-    if (err.message.includes("UNIQUE constraint failed: drivers.name")) {
-      return res.status(409).json({ error: "Driver with this name already exists." });
-    }
     console.error("Error updating driver:", err.message);
     res.status(500).json({ error: err.message });
   }
@@ -1268,9 +1349,7 @@ app.put('/api/drivers/:id', async (req, res) => {
 app.delete('/api/drivers/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    // Before deleting a driver, optionally delete their assignments
-    await dbRun('DELETE FROM car_driver_assignments WHERE driver_name = (SELECT name FROM drivers WHERE id = ?)', [id]);
-
+    // ON DELETE CASCADE will handle deleting related records in car_driver_assignments and driver_salary_history
     const result = await dbRun(`DELETE FROM drivers WHERE id = ?`, id);
     if (result.changes === 0) {
       return res.status(404).json({ message: "Driver not found." });
@@ -1299,7 +1378,104 @@ app.get('/api/driver-names', async (req, res) => {
   }
 });
 
+// NEW: API endpoint to add a new salary history record for a driver
+app.post('/api/driver-salary-history', async (req, res) => {
+  const { driverId, salaryAmount, effectiveStartDate } = req.body;
+
+  if (!driverId || effectiveStartDate === undefined || effectiveStartDate === null || effectiveStartDate === '') {
+    return res.status(400).json({ error: "Driver ID and effective start date are required for salary history." });
+  }
+
+  let parsedSalaryAmount = null;
+  if (salaryAmount !== undefined && salaryAmount !== null && salaryAmount !== '') {
+    parsedSalaryAmount = parseFloat(salaryAmount);
+    if (isNaN(parsedSalaryAmount) || parsedSalaryAmount < 0) { // Ensure non-negative
+      return res.status(400).json({ error: "Salary amount must be a valid non-negative number." });
+    }
+  } else {
+      return res.status(400).json({ error: "Salary amount is required." });
+  }
+
+  try {
+    // Find any existing active salary record for this driver
+    const existingActiveSalary = await dbGet(
+      `SELECT id, effective_start_date FROM driver_salary_history WHERE driver_id = ? AND effective_end_date IS NULL`,
+      [driverId]
+    );
+
+    // If an active salary record exists, update its effective_end_date
+    // ONLY apply date validation if an existing active salary is found
+    if (existingActiveSalary) {
+      // Ensure new salary start date is not earlier than or equal to current active salary start date
+      console.log("Existing active salary found:", existingActiveSalary);
+      console.log("Effective start date for new salary:", existingActiveSalary.effect);
+      console.log("Type : Effective start date for new salary:", typeof existingActiveSalary.effectiveStartDate);
+
+      console.log("New effective start date:", effectiveStartDate);
+      console.log("Type of New effective start date:", typeof effectiveStartDate);
+
+
+      if (effectiveStartDate <= existingActiveSalary.effective_start_date) {
+        return res.status(400).json({ error: "New salary effective date must be after the current active salary's start date." });
+      }
+
+      // Calculate end date for the old salary (one day before new effective start date)
+      const oldEndDate = new Date(effectiveStartDate);
+      oldEndDate.setDate(oldEndDate.getDate() - 1);
+      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+
+      await dbRun(
+        `UPDATE driver_salary_history SET effective_end_date = ? WHERE id = ?`,
+        [formattedOldEndDate, existingActiveSalary.id]
+      );
+    }
+
+    // Insert the new salary record
+    const result = await dbRun(
+      `INSERT INTO driver_salary_history (driver_id, salary_amount, effective_start_date, effective_end_date)
+       VALUES (?, ?, ?, NULL)`, // New record is current, so end_date is NULL
+      [driverId, parsedSalaryAmount, effectiveStartDate] // Use parsedSalaryAmount here
+    );
+
+    // Update the monthly_salary in the main drivers table to reflect the new current salary
+    await dbRun(`UPDATE drivers SET monthly_salary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [parsedSalaryAmount, driverId] // Use parsedSalaryAmount here
+    );
+
+    res.status(201).json({
+      message: "Salary history record added successfully",
+      id: result.id
+    });
+  } catch (err) {
+    console.error("Error adding salary history record:", err.message);
+    if (err.message.includes("UNIQUE constraint failed: driver_salary_history.driver_id, driver_salary_history.effective_start_date")) {
+      return res.status(409).json({ error: "A salary record already exists for this driver starting on this date." });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW: API endpoint to get salary history for a specific driver
+app.get('/api/driver-salary-history/:driverId', async (req, res) => {
+  const { driverId } = req.params;
+  try {
+    const rows = await dbAll(
+      `SELECT * FROM driver_salary_history WHERE driver_id = ? ORDER BY effective_start_date DESC`,
+      [driverId]
+    );
+    res.json({
+      message: "success",
+      data: rows
+    });
+  } catch (err) {
+    console.error("Error fetching driver salary history:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // API endpoint to assign/update a driver to a car
+// This now handles inserting new assignments or ending previous ones
 app.post('/api/car-driver-assignments', async (req, res) => {
   const { carNo, driverName, assignedDate } = req.body;
   if (!carNo || !driverName || !assignedDate) {
@@ -1307,35 +1483,99 @@ app.post('/api/car-driver-assignments', async (req, res) => {
   }
 
   try {
-    // Check if assignment already exists for this car_no
-    const row = await dbGet(`SELECT * FROM car_driver_assignments WHERE car_no = ?`, [carNo]);
-    if (row) {
-      // Update existing assignment
-      const result = await dbRun(`UPDATE car_driver_assignments SET driver_name = ?, assigned_date = ?, created_at = CURRENT_TIMESTAMP WHERE car_no = ?`,
-        [driverName, assignedDate, carNo]
-      );
-      res.json({
-        message: "Car-driver assignment updated successfully",
-        id: row.id
-      });
-    } else {
-      // Insert new assignment
-      const result = await dbRun(`
-        INSERT INTO car_driver_assignments (car_no, driver_name, assigned_date)
-        VALUES (?, ?, ?)
-      `, [carNo, driverName, assignedDate]);
-      res.status(201).json({
-        message: "Car-driver assignment added successfully",
-        id: result.id
-      });
+    // Find any existing active assignment for this car_no
+    const existingActiveAssignment = await dbGet(`SELECT id, driver_name, assigned_date FROM car_driver_assignments WHERE car_no = ? AND end_date IS NULL`, [carNo]);
+
+    // If an active assignment exists for this car
+    if (existingActiveAssignment) {
+      // If the car is being assigned to the SAME driver and the assignedDate is the same as current, it's a no-op
+      if (existingActiveAssignment.driver_name === driverName && existingActiveAssignment.assigned_date === assignedDate) {
+        return res.status(200).json({
+          message: "Car is already actively assigned to this driver on this date.",
+          id: existingActiveAssignment.id
+        });
+      }
+
+      // If the car is assigned to a DIFFERENT driver, or same driver but new assignedDate,
+      // we need to end the old assignment.
+      // Calculate end date for the old assignment (one day before new assignedDate)
+      const oldEndDate = new Date(assignedDate);
+      oldEndDate.setDate(oldEndDate.getDate() - 1);
+      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+
+      // Ensure the old end date is not before its assigned_date
+      if (formattedOldEndDate < existingActiveAssignment.assigned_date) {
+        return res.status(400).json({ error: "New assignment date conflicts with existing active assignment. Please ensure the new assigned date is after the previous assignment's start date." });
+      }
+
+      await dbRun(`
+        UPDATE car_driver_assignments
+        SET end_date = ?
+        WHERE id = ?
+      `, [formattedOldEndDate, existingActiveAssignment.id]);
+      console.log(`Ended previous assignment (ID: ${existingActiveAssignment.id}) for car ${carNo} before creating new one.`);
     }
+
+    // Insert the new assignment
+    const result = await dbRun(`
+      INSERT INTO car_driver_assignments (car_no, driver_name, assigned_date, end_date)
+      VALUES (?, ?, ?, NULL) -- New assignments are active, so end_date is NULL
+    `, [carNo, driverName, assignedDate]);
+    res.status(201).json({
+      message: "Car-driver assignment added successfully",
+      id: result.id
+    });
+
   } catch (err) {
     console.error("Error assigning car to driver:", err.message);
+    if (err.message.includes("UNIQUE constraint failed: car_driver_assignments.car_no, car_driver_assignments.assigned_date")) {
+      return res.status(409).json({ error: "This car is already assigned on this specific date. Please choose a different date or update the existing assignment." });
+    }
     res.status(500).json({ error: err.message });
   }
 });
 
+// NEW: API endpoint to update the end_date of a car-driver assignment
+app.put('/api/car-driver-assignments/end-date/:carNo', async (req, res) => {
+  const { carNo } = req.params;
+  const { endDate } = req.body;
+
+  if (!endDate) {
+    return res.status(400).json({ error: "End date is required for updating assignment." });
+  }
+
+  try {
+    // Find the current active assignment for this car
+    const currentAssignment = await dbGet(`SELECT id, assigned_date FROM car_driver_assignments WHERE car_no = ? AND end_date IS NULL`, [carNo]);
+
+    if (!currentAssignment) {
+      return res.status(404).json({ message: "No active assignment found for this car number." });
+    }
+
+    // Ensure end_date is not before assigned_date
+    if (endDate < currentAssignment.assigned_date) {
+      return res.status(400).json({ error: "End date cannot be before the assigned date." });
+    }
+
+    const result = await dbRun(`
+      UPDATE car_driver_assignments
+      SET end_date = ?
+      WHERE id = ? AND end_date IS NULL
+    `, [endDate, currentAssignment.id]);
+
+    if (result.changes === 0) {
+      return res.status(404).json({ message: "Car assignment not found or no changes made (it might already have an end date)." });
+    }
+    res.json({ message: "Car-driver assignment end date updated successfully", id: currentAssignment.id });
+  } catch (err) {
+    console.error("Error updating car-driver assignment end date:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // API endpoint to delete a car-driver assignment by car_no
+// This is now less frequently used as we prefer updating end_date for historical purposes
 app.delete('/api/car-driver-assignments/:carNo', async (req, res) => {
   const { carNo } = req.params;
   try {
@@ -1350,10 +1590,10 @@ app.delete('/api/car-driver-assignments/:carNo', async (req, res) => {
 });
 
 
-// API endpoint to get all car-driver assignments
+// API endpoint to get all CURRENT car-driver assignments (where end_date is NULL)
 app.get('/api/car-driver-assignments', async (req, res) => {
   try {
-    const rows = await dbAll("SELECT * FROM car_driver_assignments");
+    const rows = await dbAll("SELECT * FROM car_driver_assignments WHERE end_date IS NULL");
     res.json({
       message: "success",
       data: rows
@@ -1363,6 +1603,42 @@ app.get('/api/car-driver-assignments', async (req, res) => {
   }
 });
 
+// NEW: API endpoint to get car-driver assignment history for a specific car
+app.get('/api/car-driver-assignments/history/:carNo', async (req, res) => {
+  const { carNo } = req.params;
+  try {
+    const rows = await dbAll(`SELECT * FROM car_driver_assignments WHERE car_no = ? ORDER BY assigned_date DESC`, [carNo]);
+    res.json({
+      message: "success",
+      data: rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW: API endpoint to get car-driver assignment history for a specific driver
+app.get('/api/car-driver-assignments/history/by-driver/:driverId', async (req, res) => {
+  const { driverId } = req.params;
+  try {
+    // First, get the driver's name from their ID
+    const driver = await dbGet(`SELECT name FROM drivers WHERE id = ?`, [driverId]);
+    if (!driver) {
+      return res.status(404).json({ message: "Driver not found." });
+    }
+
+    const rows = await dbAll(`SELECT * FROM car_driver_assignments WHERE driver_name = ? ORDER BY assigned_date DESC`, [driver.name]);
+    res.json({
+      message: "success",
+      data: rows
+    });
+  } catch (err) {
+    console.error("Error fetching driver assignment history by driver ID:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // API endpoint to get trips for a specific driver within a month
 app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
   const { driverName, year, month } = req.params;
@@ -1371,10 +1647,18 @@ app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
   const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
 
   try {
-    // First, find the car assigned to this driver
-    const assignment = await dbGet('SELECT car_no FROM car_driver_assignments WHERE driver_name = ?', [driverName]);
+    // Find the car assigned to this driver during the specified period
+    // This query tries to find an assignment that was active at any point within the month.
+    const assignment = await dbGet(
+      `SELECT car_no FROM car_driver_assignments
+       WHERE driver_name = ?
+       AND assigned_date <= ? -- Assignment started on or before the end of the month
+       AND (end_date IS NULL OR end_date >= ?) -- Assignment ended on or after the start of the month (or is still active)
+       ORDER BY assigned_date DESC LIMIT 1`, // Get the most recent relevant assignment
+      [driverName, endDate, startDate]
+    );
 
-    if (!assignment) { // If no car is assigned to this driver
+    if (!assignment) { // If no car is assigned to this driver for the period
       return res.json({ message: "success", data: [], total_charge: 0 });
     }
 
@@ -1399,7 +1683,15 @@ app.get('/api/driver-trips-yearly/:driverName/:year', async (req, res) => {
   const endDate = `${year}-12-31`;
 
   try {
-    const assignment = await dbGet('SELECT car_no FROM car_driver_assignments WHERE driver_name = ?', [driverName]);
+    // Find the car assigned to this driver during the specified period
+    const assignment = await dbGet(
+      `SELECT car_no FROM car_driver_assignments
+       WHERE driver_name = ?
+       AND assigned_date <= ?
+       AND (end_date IS NULL OR end_date >= ?)
+       ORDER BY assigned_date DESC LIMIT 1`,
+      [driverName, endDate, startDate]
+    );
 
     if (!assignment) {
       return res.json({ message: "success", data: [], total_charge: 0 });
@@ -1513,7 +1805,7 @@ app.post('/api/general-expenses', async (req, res) => {
       id: result.id
     });
   } catch (err) {
-    console.error("Error inserting general expense record:", err.message);
+      console.error("Error inserting general expense record:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1523,7 +1815,7 @@ app.put('/api/general-expenses/:id', async (req, res) => {
   const { id } = req.params;
   const { carNo, expenseDate, description, cost, remarks } = req.body; // description will be the final description
 
-  if (!carNo || !expenseDate || !description || !cost) {
+  if (!carNo || !expenseDate || !description || cost === undefined || cost === null) { // Fixed: cost check
     return res.status(400).json({ error: "Missing required general expense fields for update." });
   }
 
@@ -1599,6 +1891,42 @@ app.get('/api/general-expenses/:carNo', async (req, res) => {
   }
 });
 
+// NEW: API endpoint to get general expenses for a specific car within a month
+app.get('/api/general-expenses-monthly/:carNo/:year/:month', async (req, res) => {
+  const { carNo, year, month } = req.params;
+  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
+
+  try {
+    const row = await dbGet(
+      'SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?',
+      [carNo, startDate, endDate]
+    );
+    const totalGeneralCost = row ? (row.total_general_cost || 0) : 0;
+    res.json({ message: "success", total_general_cost: totalGeneralCost });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW: API endpoint to get general expenses for a specific car within a year
+app.get('/api/general-expenses-yearly/:carNo/:year', async (req, res) => {
+  const { carNo, year } = req.params;
+  const startDate = `${year}-01-01`;
+  const endDate = `${year}-12-31`;
+
+  try {
+    const row = await dbGet(
+      'SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?',
+      [carNo, startDate, endDate]
+    );
+    const totalGeneralCost = row ? (row.total_general_cost || 0) : 0;
+    res.json({ message: "success", total_general_cost: totalGeneralCost });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // API endpoint for data backup
 app.get('/api/backup', async (req, res) => {
@@ -1632,6 +1960,7 @@ app.post('/api/restore', async (req, res) => {
     const deleteOrderTableNames = [
       'fuel_readings',             // Depends on trips
       'car_driver_assignments',    // Depends on drivers
+      'driver_salary_history',     // Depends on drivers (NEW)
       'trips',
       'drivers',
       'car_maintenance',
@@ -1650,6 +1979,7 @@ app.post('/api/restore', async (req, res) => {
     const insertOrderTableNames = [
       'trips',
       'drivers',
+      'driver_salary_history',     // Depends on drivers (NEW)
       'car_maintenance',
       'fuel_logs',
       'general_expenses',
