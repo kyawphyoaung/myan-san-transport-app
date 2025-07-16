@@ -7,7 +7,8 @@ import DriverManagementPage from './pages/DriverManagementPage';
 import AllTripsPage from './pages/AllTripsPage';
 import FuelConsumptionPage from './pages/FuelConsumptionPage';
 import SettingsPage from './pages/SettingsPage';
-import RouteChargesManagementPage from './pages/RouteChargesManagementPage'; // NEW: Import RouteChargesManagementPage
+import RouteChargesManagementPage from './pages/RouteChargesManagementPage'; // RouteChargesManagementPage ကို import လုပ်ပါ။
+import EmptyChargeManagementPage from './pages/EmptyChargeManagementPage'; // EmptyChargeManagementPage ကို import လုပ်ပါ။
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home'); // Default page is 'home'
@@ -25,10 +26,12 @@ function App() {
         return <AllTripsPage />;
       case 'fuelConsumption':
         return <FuelConsumptionPage />;
+      case 'routeChargesManagement': // RouteChargesManagementPage ကို render လုပ်ပါ။
+        return <RouteChargesManagementPage />;
+      case 'emptyChargeManagement': // EmptyChargeManagementPage ကို render လုပ်ပါ။
+        return <EmptyChargeManagementPage />;
       case 'settings':
         return <SettingsPage />;
-      case 'routeChargesManagement': // NEW: Render RouteChargesManagementPage
-        return <RouteChargesManagementPage />;
       default:
         return <HomePage />;
     }
