@@ -3,7 +3,92 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Pyidaungsu'; /* ဖောင့်အတွက် နာမည်တစ်ခု သတ်မှတ်ပါ */
+  src: url('./assets/fonts/NotoSansMyanmar-Regular.ttf  ') format('truetype'); /* ဖောင့်ဖိုင်ရဲ့ လမ်းကြောင်း */
+  font-weight: normal; /* ဖောင့်ရဲ့ အလေးချိန်ကို သတ်မှတ်ပါ */
+  font-style: normal; /* ဖောင့်ရဲ့ ပုံစံကို သတ်မှတ်ပါ */
+}
+
+#printable-report-content {
+  font-family: 'Pyidaungsu', sans-serif;
+}
+
+.MuiTableCell-head, .MuiTableCell-body {
+  font-family: 'Pyidaungsu', sans-serif !important; /* !important က တခြား style တွေကို override လုပ်ဖို့ပါ */
+}
+
 /* Global styles or custom fonts can go here */
 body {
-  font-family: 'Inter', sans-serif; /* Tailwind config မှာ define လုပ်ထားတဲ့ Inter font ကို အသုံးပြုပါ */
+  font-family: 'Pyidaungsu', sans-serif; /* Tailwind config မှာ define လုပ်ထားတဲ့ Inter font ကို အသုံးပြုပါ */
 }
+
+/* Codes */
+
+/* Print-specific styles */
+@media print {
+
+  body {
+    display: none !important;
+  }
+/* 
+  body > :not(#printable-report-content) {
+    display: none !important;
+  } */
+
+  /* Make sure the printable content is visible and takes full width/height */
+  /* Step 2: printable-report-content နဲ့ သူ့ရဲ့ parent element တွေကို ပြန်ပေါ်အောင်လုပ်ပါ */
+  body,
+  #root,
+  #root > div, /* or the class name of the div */
+  #root > div > div, /* or the class name of the div */
+  #root > div > div > main,
+  #printable-report-content {
+    display: block !important;
+  }
+
+  #root > div > header,
+  #root > div > aside {
+    display: none !important;
+  }
+
+  #printable-report-content {
+    visibility: visible !important;
+    position: static !important;/* static က တခါတလေ ပြဿနာပေးနိုင်တာမို့ relative သုံးကြည့်ပါ */
+    z-index: 9999 !important; /* Reset positioning */
+    left: auto !important;
+    top: auto !important;
+    margin: 0 !important; /* Remove any external margins */
+    padding: 0 !important; /* Remove any external padding */
+    width: 100% !important; /* Ensure it takes full print width */
+    height: auto !important; /* Auto height */
+  }
+
+  /* Specify paper size and margins for the print output */
+  @page {
+    size: A4 landscape; /* A4 size in landscape orientation */
+    margin: 0.3in 0.15in 0.3in 0.15in;
+  }
+
+  /* Ensure table elements look clean and have borders when printed */
+  #printable-report-content table {
+    width: 100% !important;
+    table-layout: fixed !important; /* Fixed layout for consistent column widths */
+    border-collapse: collapse; /* Collapse borders for a clean table look */
+  }
+
+  #printable-report-content th,
+  #printable-report-content td {
+    border: 1px solid #ccc; /* Add thin borders to table cells */
+    padding: 8px; /* Add some padding inside cells */
+    font-size: 10pt; /* Adjust font size for better readability on print */
+    text-align: left; /* Align text to the left */
+    vertical-align: top; /* Align content to the top of the cell */
+  }
+
+  /* Hide the "Back" button when printing */
+  #printable-report-content button {
+    display: none !important;
+  }
+}
+

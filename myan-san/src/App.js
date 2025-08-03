@@ -9,6 +9,7 @@ import FuelConsumptionPage from './pages/FuelConsumptionPage';
 import SettingsPage from './pages/SettingsPage';
 import RouteChargesManagementPage from './pages/RouteChargesManagementPage'; // RouteChargesManagementPage ကို import လုပ်ပါ။
 import EmptyChargeManagementPage from './pages/EmptyChargeManagementPage'; // EmptyChargeManagementPage ကို import လုပ်ပါ။
+import './index.css';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home'); // Default page is 'home'

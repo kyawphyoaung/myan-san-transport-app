@@ -7,53 +7,73 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, TextField, Select, MenuItem, FormControl, InputLabel,
   Checkbox, Button, Box, Typography, Alert, CircularProgress, Dialog,
-  DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel
+  DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, ListSubheader
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
-
+import { parseISO, addDays, setHours, setMinutes, isAfter, format } from 'date-fns'; // date-fns functions
+// import html2pdf from 'html2pdf.js'; // html2pdf library ကို ဖယ်ရှားလိုက်ပါပြီ။
+import '../index.css'; // Global CSS (print styles for index.css)
 // Static data များကို import လုပ်ခြင်း
 import carNumbersData from '../data/carNumbers.json';
-// emptyContainerLocationsData ကို ဖယ်ရှားပါပြီ။ Backend မှ empty_charges_versions ကို သုံးပါမည်။
 import kmData from '../data/kmData.json';
 import { formatMMK } from '../utils/currencyFormatter'; // Currency formatter ကို import လုပ်ပါ။
+
+// မှ သို့ လမ်းကြောင်းခ နဲ့ပက်သက်ရင် const getRouteCharge ကို စစ်
 
 function HomePage() {
   // Form input များကို သိမ်းဆည်းရန် state များ
   const [formData, setFormData] = useState({
-    date: '',
+    date: '', // Start Date (YYYY-MM-DD)
+    startTime: '00:00', // NEW: Start Time (HH:MM) - Default to 00:00
+    endDate: '', // NEW: Trip End Date (YYYY-MM-DD)
+    endTime: '00:00', // NEW: Trip End Time (HH:MM) - Default to 00:00
     carNo: '',
     from: '',
     to: '',
-    emptyHandlingLocation: '', // NEW: Empty Container Pickup/Drop-off location name
+    emptyHandlingLocation: '',
     overnightStay: false,
     dayOverDelayed: false,
     remarks: '',
+    agentName: '', // NEW: Agent Name
     driverName: '',
-    routeCharge: 0, // Auto-calculated
-    emptyCharge: 0, // NEW: Combined empty pickup/dropoff charge (auto-calculated)
-    totalCharge: 0, // Auto-calculated initially, can be manual
-    kmTravelled: 0, // Auto-calculated
-    isManualEdited: false, // Flag to check if totalCharge was manually edited
+    routeCharge: 0,
+    emptyCharge: 0,
+    totalCharge: 0,
+    isManualEdited: false,
+    overnightCharges: 0,
+    dayOverCharges: 0,
   });
 
   // Editing အတွက် state များ
   const [editingTripId, setEditingTripId] = useState(null);
   const [editFormData, setEditFormData] = useState({
     date: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
     carNo: '',
     from: '',
     to: '',
-    emptyHandlingLocation: '', // NEW: Empty Container Pickup/Drop-off location name
+    emptyHandlingLocation: '',
     overnightStay: false,
     dayOverDelayed: false,
     remarks: '',
+    agentName: '',
     driverName: '',
     routeCharge: 0,
-    emptyCharge: 0, // NEW: Combined empty pickup/dropoff charge
+    emptyCharge: 0,
     totalCharge: 0,
-    kmTravelled: 0,
     isManualEdited: false,
   });
+
+  // Manual override flags for overnight/dayover (new trip form)
+  const [isOvernightStayManual, setIsOvernightStayManual] = useState(false);
+  const [isDayOverDelayedManual, setIsDayOverDelayedManual] = useState(false);
+
+  // Manual override flags for overnight/dayover (edit trip form)
+  const [isEditOvernightStayManual, setIsEditOvernightStayManual] = useState(false);
+  const [isEditDayOverDelayedManual, setIsEditDayOverDelayedManual] = useState(false);
+
 
   // တွက်ချက်ထားသော ရလဒ်များကို သိမ်းဆည်းရန် state (Database မှ ရယူမည်)
   const [allTrips, setAllTrips] = useState([]);
@@ -67,11 +87,12 @@ function HomePage() {
   const [driverNames, setDriverNames] = useState([]);
   // Backend မှ ရယူမည့် ကား-ယာဉ်မောင်း ချိတ်ဆက်မှုများ
   const [carDriverAssignments, setCarDriverAssignments] = useState([]);
-
-  // NEW: States for Empty Charges Data from Backend
-  const [emptyChargeData, setEmptyChargeData] = useState(null); // Stores empty_locations_charges, same_direction_overrides, port_locations
-  const [emptyLocationsOptions, setEmptyLocationsOptions] = useState([]); // For the empty handling location dropdown
-  const [portLocations, setPortLocations] = useState(new Set()); // For quick lookup of port locations
+  // Empty Charges Data from Backend
+  const [emptyChargeData, setEmptyChargeData] = useState(null);
+  const [emptyLocationsOptions, setEmptyLocationsOptions] = useState([]);
+  const [portLocations, setPortLocations] = useState(new Set());
+  // Agent Names for dropdown
+  const [agentNames, setAgentNames] = useState([]);
 
   // HomePage Table Filter states (CarNo, Month, Year only)
   const [filterCarNo, setFilterCarNo] = useState('');
@@ -98,6 +119,10 @@ function HomePage() {
   // Edit dialog states
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
+  // NEW: State to control whether to show print-specific content
+  const [showPrintView, setShowPrintView] = useState(false);
+
+
   const API_BASE_URL = 'http://localhost:5001'; // Backend API base URL ကို သတ်မှတ်ပါ။
 
   // Trips များကို Backend မှ fetch လုပ်ရန် function
@@ -110,7 +135,7 @@ function HomePage() {
       if (data.message === "success") {
         setAllTrips(data.data);
 
-        // Extract unique years and car numbers from fetched data
+        // Extract unique years and car numbers from fetched data for filters
         const years = [...new Set(data.data.map(trip => new Date(trip.date).getFullYear()))].sort((a, b) => b - a);
         setAvailableYears(years);
 
@@ -176,6 +201,26 @@ function HomePage() {
     }
   }, []);
 
+  // Agent အမည်များကို Backend မှ fetch လုပ်ရန် function (NEW)
+  const fetchAgentNames = useCallback(async () => {
+    try {
+      // For now, using a hardcoded list for agents. Replace with API call if needed.
+      // Make sure the server.js has this API if you uncomment
+      // const response = await fetch(`${API_BASE_URL}/api/agent-names`);
+      // const data = await response.json();
+      // if (data.message === "success") {
+      //   setAgentNames(data.data);
+      // } else {
+      //   console.error("Failed to fetch agent names:", data.error);
+      // }
+      const agents = ['ဖိုးချမ်း', 'ကိုစိုင်း', 'ကျော်သူနိုင်', 'ကိုစိုင်း']; // Placeholder list
+      setAgentNames(agents);
+    } catch (error) {
+      console.error("Error fetching agent names:", error);
+    }
+  }, []);
+
+
   // ကား-ယာဉ်မောင်း ချိတ်ဆက်မှုများကို Backend မှ fetch လုပ်ရန် function
   const fetchCarDriverAssignments = useCallback(async () => {
     try {
@@ -191,7 +236,7 @@ function HomePage() {
     }
   }, []);
 
-  // NEW: Fetch active empty charges data
+  // Fetch active empty charges data
   const fetchEmptyChargeData = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/empty-charges/active`);
@@ -210,7 +255,10 @@ function HomePage() {
   // Component စတင်သောအခါ Backend မှ settings, route charges, trips နှင့် driver names များကို ရယူခြင်း
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
-    setFormData(prevData => ({ ...prevData, date: today }));
+    const currentTime = format(new Date(), 'HH:mm'); // Current time in HH:MM format
+
+    // Set default start/end date/time for new trip
+    setFormData(prevData => ({ ...prevData, date: today, startTime: currentTime, endDate: today, endTime: currentTime }));
 
     const fetchInitialData = async () => {
       try {
@@ -238,30 +286,73 @@ function HomePage() {
       }
       fetchTrips();
       fetchDriverNames();
+      fetchAgentNames(); // Fetch agent names
       fetchCarDriverAssignments();
       fetchEmptyChargeData(); // Fetch empty charge data
     };
 
     fetchInitialData();
-  }, [fetchTrips, fetchDriverNames, fetchCarDriverAssignments, fetchEmptyChargeData]);
+  }, [fetchTrips, fetchDriverNames, fetchAgentNames, fetchCarDriverAssignments, fetchEmptyChargeData]);
+
 
   // Input field များ ပြောင်းလဲသောအခါ state ကို update လုပ်ရန် function (New Trip Form)
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    // Handle manual override for overnightStay and dayOverDelayed
+    if (name === 'overnightStay') {
+      setIsOvernightStayManual(true);
+    } else if (name === 'dayOverDelayed') {
+      setIsDayOverDelayedManual(true);
+      if (checked) {
+        // overnightStay ကိုပါ true အဖြစ် auto-checked လုပ်ပါ
+        setFormData(prevData => ({
+          ...prevData,
+          dayOverDelayed: true,
+          overnightStay: true // <-- overnightStay ကို true လုပ်လိုက်ပါ
+        }));
+        // manual flag ကိုလည်း မှတ်ပါ
+        setIsDayOverDelayedManual(true);
+        setIsOvernightStayManual(true);
+      } else {
+        // dayOverDelayed ကို uncheck လုပ်ရင် (false ဖြစ်ရင်)
+        setFormData(prevData => ({
+          ...prevData,
+          dayOverDelayed: false,
+        }));
+        setIsDayOverDelayedManual(true);
+      }
+    } else if (name === 'date' || name === 'startTime' || name === 'endDate' || name === 'endTime' || name === 'from') { // Reset manual flags when key auto-calculation fields change
+      setIsOvernightStayManual(false);
+      setIsDayOverDelayedManual(false);
+    }
+
     setFormData(prevData => ({
       ...prevData,
       [name]: type === 'checkbox' ? checked : value,
-      isManualEdited: name === 'totalCharge' ? true : prevData.isManualEdited // Set manual edit flag if totalCharge is changed
+      isManualEdited: name === 'totalCharge' ? true : prevData.isManualEdited
     }));
   };
 
   // Input field များ ပြောင်းလဲသောအခါ state ကို update လုပ်ရန် function (Edit Trip Form)
   const handleEditChange = (e) => {
     const { name, value, type, checked } = e.target;
+    // Handle manual override for overnightStay and dayOverDelayed in edit form
+    if (name === 'overnightStay') {
+      setIsEditOvernightStayManual(true);
+      console.log("အသားအိပ် button ချိန်းပီ Trueဖြစ်ပီ", isEditOvernightStayManual)
+    } else if (name === 'dayOverDelayed') {
+      setIsEditDayOverDelayedManual(true);
+      console.log("နေ့ကျော် button ချိန်းပီ Trueဖြစ်ပီ", isEditDayOverDelayedManual)
+
+    } else if (name === 'date' || name === 'startTime' || name === 'endDate' || name === 'endTime' || name === 'from') { // Reset manual flags when key auto-calculation fields change
+      setIsEditOvernightStayManual(false);
+      setIsEditDayOverDelayedManual(false);
+    }
+
     setEditFormData(prevData => ({
       ...prevData,
       [name]: type === 'checkbox' ? checked : value,
-      isManualEdited: name === 'totalCharge' ? true : prevData.isManualEdited // Set manual edit flag if totalCharge is changed
+      isManualEdited: name === 'totalCharge' ? true : prevData.isManualEdited
     }));
   };
 
@@ -290,10 +381,10 @@ function HomePage() {
   // Filter logic for HomePage (Car No, Year, and Month only)
   const applyHomePageFilters = useCallback((trips, carNo, year, month) => {
     let tempFilteredTrips = trips.filter(trip => {
-      const tripDate = new Date(trip.date);
+      const tripStartDate = parseISO(trip.date); // Use parseISO for robustness
       const matchesCarNo = carNo === '' ? true : trip.car_no === carNo;
-      const matchesYear = year === '' ? true : tripDate.getFullYear() === year;
-      const matchesMonth = month === '' ? true : (tripDate.getMonth() + 1) === month;
+      const matchesYear = year === '' ? true : tripStartDate.getFullYear() === year;
+      const matchesMonth = month === '' ? true : (tripStartDate.getMonth() + 1) === month;
       return matchesCarNo && matchesYear && matchesMonth;
     });
     setFilteredTrips(tempFilteredTrips);
@@ -312,12 +403,12 @@ function HomePage() {
   useEffect(() => {
     if (filterYear && allTrips.length > 0) {
       const monthsForSelectedYear = [...new Set(allTrips
-        .filter(trip => new Date(trip.date).getFullYear() === filterYear)
-        .map(trip => new Date(trip.date).getMonth() + 1)
+        .filter(trip => parseISO(trip.date).getFullYear() === filterYear)
+        .map(trip => parseISO(trip.date).getMonth() + 1)
       )].sort((a, b) => a - b);
       setAvailableMonths(monthsForSelectedYear);
       if (!monthsForSelectedYear.includes(filterMonth) && monthsForSelectedYear.length > 0) {
-        setFilterMonth(monthsForSelectedYear[0]);
+        setFilterMonth(''); // Default to 'All' if current month is not available for new year
       } else if (monthsForSelectedYear.length === 0) {
         setFilterMonth('');
       }
@@ -353,24 +444,39 @@ function HomePage() {
   };
 
   // Helper to get route charge from routeCharges data
-  const getRouteCharge = useCallback((from, to) => {
-    const route = currentRouteCharges.find(r => r.route === to);
-    if (route) {
-      if (from === 'အေးရှားဝေါ' || from === 'MIP') {
-        return route.MIP_AWPT_40;
-      } else if (from === 'သီလဝါ') {
-        return route.MIIT_40;
-      }
-      if (from === 'သီလဝါ' && to === 'MIP') {
-        const sezThilawarRoute = currentRouteCharges.find(r => r.route === 'SEZ/Thilawar Zone');
-        return sezThilawarRoute ? sezThilawarRoute.MIP_AWPT_40 : 0;
-      }
-    }
-    return 0;
-  }, [currentRouteCharges]);
+const getRouteCharge = useCallback((from, to) => {
+  // Special case ကို အရင်ဆုံး စစ်ဆေးပါ။
+  if (from === 'သီလဝါ' && to === 'MIP') {
+    const sezThilawarRoute = currentRouteCharges.find(r => r.route === 'SEZ/Thilawar Zone');
+    return sezThilawarRoute ? sezThilawarRoute.MIP_AWPT_40 : 0;
+  }
 
-  // NEW: Frontend logic to calculate empty charges based on selected locations and active data
-  // Returns { charge: number, type: 'pickup' | 'dropoff' | 'none' }
+  // from နဲ့ to ထဲက ဘယ်ဟာက ဆိပ်ကမ်းနာမည်လဲဆိုတာကို ရှာဖွေပါ။
+  const ports = ['အေးရှားဝေါ', 'MIP', 'သီလဝါ'];
+  const tripRoute = ports.includes(from) ? to : from;
+
+  // အခုမှ tripRoute ကို အသုံးပြုပြီး မှန်ကန်တဲ့ route ကို ရှာဖွေပါ။
+  const route = currentRouteCharges.find(r => {
+    const isExactMatch = r.route === tripRoute;
+    const isPartialMatch = r.route.split(/[\/+]/).includes(tripRoute);
+    return isExactMatch || isPartialMatch;
+  });
+  console.log("ရှာဖွေရရှိသော route သည်",route)
+  if (route) {
+    // from သို့မဟုတ် to က အေးရှားဝေါ/MIP ဖြစ်ရင် MIP_AWPT_40 ကို ရွေးပါ။
+    if (from === 'အေးရှားဝေါ' || from === 'MIP' || to === 'အေးရှားဝေါ' || to === 'MIP') {
+      return route.MIP_AWPT_40;
+    }
+    // from သို့မဟုတ် to က သီလဝါ ဖြစ်ရင် MIIT_40 ကို ရွေးပါ။
+    else if (from === 'သီလဝါ' || to === 'သီလဝါ') {
+      return route.MIIT_40;
+    }
+  }
+
+  return 0;
+}, [currentRouteCharges]);
+
+  // Frontend logic to calculate empty charges based on selected locations and active data
   const calculateEmptyChargeFrontend = useCallback((from, to, emptyLoc, tripDate) => {
     if (!emptyChargeData || !emptyLoc) {
       return { charge: 0, type: 'none' };
@@ -388,14 +494,14 @@ function HomePage() {
       return { charge: 0, type: 'none' };
     }
 
-    let chargeType = 'none';
+    let chargeType = 'none'; // 'pickup', 'dropoff', or 'none'
+
+    // Determine if it's an Empty Pickup or Empty Dropoff scenario based on port locations
+    // This is primarily for remarks / backend logic. Frontend just shows the combined charge.
     if (portLocationsSet.has(from)) {
-      chargeType = 'dropoff'; // Container came with cargo, dropped empty after cargo delivery
+      chargeType = 'dropoff';
     } else if (portLocationsSet.has(to)) {
-      chargeType = 'pickup'; // Container picked up empty, then loaded for delivery to Point B
-    } else {
-      // console.log(`Neither trip origin (${from}) nor destination (${to}) is a recognized port. No empty charge calculated.`);
-      return { charge: 0, type: 'none' };
+      chargeType = 'pickup';
     }
 
     // Check for "Same Direction" override
@@ -406,21 +512,63 @@ function HomePage() {
     );
 
     if (isSameDirection) {
-      // console.log(`Combination (${from} -> ${to} with Empty ${emptyLoc}) is 'Same Direction'. Charge is 0.`);
       return { charge: 0, type: chargeType }; // Same direction, no extra charge
     } else {
-      // console.log(`Combination (${from} -> ${to} with Empty ${emptyLoc}) is 'Opposite Direction'. Charge is ${baseCharge}.`);
       return { charge: baseCharge, type: chargeType }; // Opposite direction, apply base charge
     }
   }, [emptyChargeData]);
 
+  // Logic to auto-calculate overnightStay and dayOverDelayed based on dates and times
+  const autoCalculateOvernightAndDayOver = useCallback((startDateStr, startTimeStr, endDateStr, endTimeStr, fromLocation) => {
+    let suggestedOvernightStay = false;
+    let suggestedDayOverDelayed = false;
+
+    // Ensure all necessary date/time strings are present
+    if (!startDateStr || !startTimeStr || !endDateStr || !endTimeStr) {
+      return { overnightStay: false, dayOverDelayed: false };
+    }
+
+    try {
+      const startDateTime = parseISO(`${startDateStr}T${startTimeStr}`);
+      const endDateTime = parseISO(`${endDateStr}T${endTimeStr}`);
+
+      // Auto-calculate overnightStay
+      // Trip ends after 6:30 AM on the next day from start date
+      const nextDay630AM = setMinutes(setHours(addDays(startDateTime, 1), 6), 30);
+      if (isAfter(endDateTime, nextDay630AM)) {
+        suggestedOvernightStay = true;
+      }
+
+      // Auto-calculate dayOverDelayed
+      const nextDay1AM = setMinutes(setHours(addDays(startDateTime, 1), 1), 0);
+      const nextDay230AM = setMinutes(setHours(addDays(startDateTime, 1), 2), 30);
+
+      if (fromLocation === 'အေးရှားဝေါ') {
+        if (isAfter(endDateTime, nextDay1AM)) {
+          suggestedDayOverDelayed = true;
+        }
+      } else { // Not 'အေးရှားဝေါ'
+        if (isAfter(endDateTime, nextDay230AM)) {
+          suggestedDayOverDelayed = true;
+        }
+      }
+
+      return {
+        overnightStay: suggestedOvernightStay,
+        dayOverDelayed: suggestedDayOverDelayed
+      };
+    } catch (e) {
+      console.error("Error in autoCalculateOvernightAndDayOver:", e);
+      return { overnightStay: false, dayOverDelayed: false }; // Default to false on error
+    }
+  }, []);
 
   // Main calculation function for Total Charge (reusable for new and edit forms)
   const calculateTotalCharge = useCallback((
     currentRouteCharge,
     currentEmptyCharge, // This is the combined empty charge
-    overnightStatusBoolean,
-    dayOverStatusBoolean,
+    overnightStatusBoolean, // true/false
+    dayOverStatusBoolean, // true/false
     currentCarNo
   ) => {
     let total = parseFloat(currentRouteCharge || 0);
@@ -429,43 +577,83 @@ function HomePage() {
     const overnightDayoverCombinedCharge = parseFloat(settings.overnight_dayover_combined_charge || 0);
     const gepOvernightCharge = parseFloat(settings.gep_overnight_charge || 0);
     const nineKOvernightCharge = parseFloat(settings['9k_overnight_charge'] || 0);
+    let overNightCharges = 0.0;
+    let DayOverCharges = 0.0;
 
-    // Convert boolean status to string for calculation logic (matches DB values)
-    const overnightStatus = overnightStatusBoolean ? 'yes' : 'no'; // Changed to 'yes'/'no' for consistency with backend
-    const dayOverStatus = dayOverStatusBoolean ? 'yes' : 'no'; // Changed to 'yes'/'no' for consistency with backend
 
-    if (overnightStatus === 'yes' && dayOverStatus === 'yes') {
+    const selectedCar = carNumbersData.find(car => car.number === currentCarNo);
+    // ရှာတွေ့ရင် gate တန်ဖိုးကို ယူပါ၊ မတွေ့ရင်တော့ null သို့မဟုတ် '' ထားပါ
+    const car_gate = selectedCar ? selectedCar.gate : '';
+
+
+    if (overnightStatusBoolean && dayOverStatusBoolean) {
+      overNightCharges = 80000;
+      DayOverCharges = 120000;
       total += overnightDayoverCombinedCharge;
-    } else if (overnightStatus === 'yes') { // Only overnight, no dayover
-      if (currentCarNo.startsWith('GEP')) {
+
+    } else if (overnightStatusBoolean) { // Only overnight, no dayover
+      if (car_gate.includes('GEP')) {
+        overNightCharges += gepOvernightCharge;
+        DayOverCharges = overnightDayoverCombinedCharge - overNightCharges;
         total += gepOvernightCharge;
-      } else if (currentCarNo.startsWith('9K')) {
+      } else if (car_gate.includes('9K')) {
+
+        overNightCharges += nineKOvernightCharge;
+        DayOverCharges = overnightDayoverCombinedCharge - overNightCharges;
         total += nineKOvernightCharge;
       }
     }
-    // If only dayOverStatus is 'yes' and overnightStatus is 'no', no extra charge based on current logic.
-    return total;
-  }, [settings]);
+    return {
+      newTotalCharge: total,
+      overNightCharges: overNightCharges,
+      DayOverCharges: DayOverCharges
+    }
+  }, [settings, formData.overnightStay, formData.dayOverDelayed]);
 
-
-  // Effect to update new trip form's auto-calculated fields
+  // Effect to update new trip form's auto-calculated fields (route, km, emptyCharge, totalCharge, overnight, dayover)
   useEffect(() => {
-    if (formData.isManualEdited) return; // Do not auto-calculate if manually edited
+    // Only auto-calculate if totalCharge is NOT manually edited
+    // AND if any key calculation fields are present
+    if (formData.isManualEdited) return;
+
+    const hasKeyFields = formData.date && formData.startTime && formData.endDate && formData.endTime && formData.from && formData.to && formData.carNo;
+    if (!hasKeyFields) {
+      // If key fields are missing, reset auto-calculated values to 0/false
+      setFormData(prevData => ({
+        ...prevData,
+        routeCharge: 0,
+        emptyCharge: 0,
+        kmTravelled: 0,
+        totalCharge: 0,
+        overnightStay: false,
+        dayOverDelayed: false,
+      }));
+      return;
+    }
+
 
     const newRouteCharge = getRouteCharge(formData.from, formData.to);
     const newKmTravelled = kmData.find(k => k.start_point === formData.from && k.destination_point === formData.to)?.km_value || 0;
 
-    // Calculate empty charge
     const emptyChargeResult = calculateEmptyChargeFrontend(formData.from, formData.to, formData.emptyHandlingLocation, formData.date);
     const newEmptyCharge = emptyChargeResult.charge;
 
-    const newTotalCharge = calculateTotalCharge(
+    const { overnightStay: autoOvernight, dayOverDelayed: autoDayOver } =
+      autoCalculateOvernightAndDayOver(formData.date, formData.startTime, formData.endDate, formData.endTime, formData.from);
+
+    // Apply auto-calculated values only if manual flags are false
+    const finalOvernightStay = isOvernightStayManual ? formData.overnightStay : autoOvernight;
+    const finalDayOverDelayed = isDayOverDelayedManual ? formData.dayOverDelayed : autoDayOver;
+
+    const { newTotalCharge, overNightCharges, DayOverCharges } = calculateTotalCharge(
       newRouteCharge,
       newEmptyCharge,
-      formData.overnightStay,
-      formData.dayOverDelayed,
+      finalOvernightStay, // Use final state for calculation
+      finalDayOverDelayed, // Use final state for calculation
       formData.carNo
     );
+
+
 
     setFormData(prevData => ({
       ...prevData,
@@ -473,26 +661,58 @@ function HomePage() {
       emptyCharge: newEmptyCharge,
       kmTravelled: newKmTravelled,
       totalCharge: newTotalCharge,
+      // Update checkboxes only if not manually overridden
+      overnightStay: finalOvernightStay,
+      dayOverDelayed: finalDayOverDelayed,
+      overnightCharges: overNightCharges,
+      dayOverCharges: DayOverCharges,
     }));
-  }, [formData.from, formData.to, formData.emptyHandlingLocation, formData.overnightStay, formData.dayOverDelayed, formData.carNo, formData.date, formData.isManualEdited, getRouteCharge, calculateEmptyChargeFrontend, calculateTotalCharge]);
+  }, [
+    formData.date, formData.startTime, formData.endDate, formData.endTime, // NEW Date/Time dependencies
+    formData.from, formData.to, formData.emptyHandlingLocation, formData.carNo,
+    formData.isManualEdited, isOvernightStayManual, isDayOverDelayedManual, // Manual flags
+    getRouteCharge, calculateEmptyChargeFrontend, autoCalculateOvernightAndDayOver, calculateTotalCharge
+  ]);
 
 
   // Effect to update edit trip form's auto-calculated fields
   useEffect(() => {
-    if (editFormData.isManualEdited) return; // Do not auto-calculate if manually edited
+    if (editFormData.isManualEdited) return; // Do not auto-calculate if totalCharge is manually edited
+
+    const hasKeyFields = editFormData.date && editFormData.startTime && editFormData.endDate && editFormData.endTime && editFormData.from && editFormData.to && editFormData.carNo;
+    if (!hasKeyFields) {
+      // If key fields are missing, reset auto-calculated values to 0/false
+      setEditFormData(prevData => ({
+        ...prevData,
+        routeCharge: 0,
+        emptyCharge: 0,
+        kmTravelled: 0,
+        totalCharge: 0,
+        overnightStay: false,
+        dayOverDelayed: false,
+      }));
+      return;
+    }
 
     const newRouteCharge = getRouteCharge(editFormData.from, editFormData.to);
     const newKmTravelled = kmData.find(k => k.start_point === editFormData.from && k.destination_point === editFormData.to)?.km_value || 0;
 
-    // Calculate empty charge for edit form
     const emptyChargeResult = calculateEmptyChargeFrontend(editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.date);
     const newEmptyCharge = emptyChargeResult.charge;
+
+    const { overnightStay: autoOvernight, dayOverDelayed: autoDayOver } =
+      autoCalculateOvernightAndDayOver(editFormData.date, editFormData.startTime, editFormData.endDate, editFormData.endTime, editFormData.from);
+
+    // Apply auto-calculated values only if manual flags are false
+    const finalEditOvernightStay = isEditOvernightStayManual ? editFormData.overnightStay : autoOvernight;
+    const finalEditDayOverDelayed = isEditDayOverDelayedManual ? editFormData.dayOverDelayed : autoDayOver;
+
 
     const newTotalCharge = calculateTotalCharge(
       newRouteCharge,
       newEmptyCharge,
-      editFormData.overnightStay,
-      editFormData.dayOverDelayed,
+      finalEditOvernightStay, // Use final state for calculation
+      finalEditDayOverDelayed, // Use final state for calculation
       editFormData.carNo
     );
 
@@ -502,8 +722,16 @@ function HomePage() {
       emptyCharge: newEmptyCharge,
       kmTravelled: newKmTravelled,
       totalCharge: newTotalCharge,
+      // Update checkboxes only if not manually overridden
+      overnightStay: finalEditOvernightStay,
+      dayOverDelayed: finalEditDayOverDelayed,
     }));
-  }, [editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.overnightStay, editFormData.dayOverDelayed, editFormData.carNo, editFormData.date, editFormData.isManualEdited, getRouteCharge, calculateEmptyChargeFrontend, calculateTotalCharge]);
+  }, [
+    editFormData.date, editFormData.startTime, editFormData.endDate, editFormData.endTime, // NEW Date/Time dependencies
+    editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.carNo,
+    editFormData.isManualEdited, isEditOvernightStayManual, isEditDayOverDelayedManual, // Manual flags
+    getRouteCharge, calculateEmptyChargeFrontend, autoCalculateOvernightAndDayOver, calculateTotalCharge
+  ]);
 
 
   // တွက်ချက်ရန် ခလုတ် နှိပ်သောအခါ လုပ်ဆောင်မည့် function (New Trip)
@@ -511,46 +739,57 @@ function HomePage() {
     setError(null);
     setSuccessMessage(null);
 
-    if (!formData.date || !formData.carNo || !formData.from || !formData.to || !formData.driverName) {
-      setError('ကျေးဇူးပြု၍ ရက်စွဲ၊ ကားနံပါတ်၊ မှ၊ သို့ နှင့် ယာဉ်မောင်းအမည် နေရာများကို ပြည့်စုံစွာ ထည့်သွင်းပါ။');
+    // Validation (Updated with new fields)
+    if (!formData.date || !formData.startTime || !formData.endDate || !formData.endTime ||
+      !formData.carNo || !formData.from || !formData.to || !formData.driverName) {
+      setError('ကျေးဇူးပြု၍ ရက်စွဲ၊ စတင်ချိန်၊ ပြီးဆုံးရက်၊ ပြီးဆုံးချိန်၊ ကားနံပါတ်၊ မှ၊ သို့ နှင့် ယာဉ်မောင်းအမည် နေရာများကို ပြည့်စုံစွာ ထည့်သွင်းပါ။');
       return;
     }
 
-    // Determine empty_pickup_charge and empty_dropoff_charge for backend based on emptyCharge and emptyHandlingLocation
     let empty_pickup_charge_for_backend = 0;
     let empty_dropoff_charge_for_backend = 0;
     let remarks_for_backend = formData.remarks;
 
     if (formData.emptyHandlingLocation) {
       const emptyChargeResult = calculateEmptyChargeFrontend(formData.from, formData.to, formData.emptyHandlingLocation, formData.date);
+      // Determine if it's pickup or dropoff for backend storage
       if (emptyChargeResult.type === 'pickup') {
         empty_pickup_charge_for_backend = emptyChargeResult.charge;
+        empty_dropoff_charge_for_backend = 0; // Ensure only one is set
       } else if (emptyChargeResult.type === 'dropoff') {
         empty_dropoff_charge_for_backend = emptyChargeResult.charge;
+        empty_pickup_charge_for_backend = 0; // Ensure only one is set
       }
+
       if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'pickup' || emptyChargeResult.type === 'dropoff')) {
         remarks_for_backend += (remarks_for_backend ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
       }
     }
 
     const tripDataToSave = {
-      date: formData.date,
-      carNo: formData.carNo,
-      from_location: formData.from,
-      to_location: formData.to,
-      routeCharge: formData.routeCharge, // Use the auto-calculated routeCharge from state
-      empty_pickup_charge: empty_pickup_charge_for_backend, // Send to backend
-      empty_dropoff_charge: empty_dropoff_charge_for_backend, // Send to backend
-      empty_handling_location: formData.emptyHandlingLocation || null, // Send selected empty handling location
-      overnight_status: formData.overnightStay ? 'yes' : 'no', // Send 'yes'/'no'
-      day_over_status: formData.dayOverDelayed ? 'yes' : 'no', // Send 'yes'/'no'
-      remarks: remarks_for_backend,
-      total_charge: formData.totalCharge, // Use the auto-calculated or manually edited totalCharge from state
-      km_travelled: formData.kmTravelled, // Use the auto-calculated kmTravelled from state
-      fuel_amount: 0,
-      fuel_cost: 0,
-      driverName: formData.driverName,
-      is_manual_edited: formData.isManualEdited ? 1 : 0, // Send 1 if manually edited, 0 otherwise
+      date: formData.date, //1
+      startTime: formData.startTime, //2
+      endDate: formData.endDate, //3
+      endTime: formData.endTime, //4
+      carNo: formData.carNo, //5
+      from_location: formData.from, //6
+      to_location: formData.to, //7
+      routeCharge: formData.routeCharge, //8
+      // empty_pickup_charge: empty_pickup_charge_for_backend, 
+      empty_pickup_dropoff_charge: formData.emptyCharge, //9
+      empty_handling_location: formData.emptyHandlingLocation || null,  //10
+      overnight_status: formData.overnightStay ? 'yes' : 'no', //11
+      overnight_charges: formData.overnightCharges, //12
+      day_over_status: formData.dayOverDelayed ? 'yes' : 'no', //13
+      day_over_charges: formData.dayOverCharges, //14
+      remarks: remarks_for_backend, //15
+      agent_name: formData.agentName || null, //16
+      total_charge: formData.totalCharge, //17
+      km_travelled: formData.kmTravelled, //18
+      fuel_amount: 0, //19
+      fuel_cost: 0, //20
+      is_manual_edited: formData.isManualEdited ? 1 : 0, //21
+      driverName: formData.driverName, //22
     };
 
     try {
@@ -558,23 +797,17 @@ function HomePage() {
 
       if (response.status === 201) {
         setSuccessMessage("ခရီးစဉ်မှတ်တမ်း အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ။");
-        // Clear form fields, resetting isManualEdited to false
+        // Clear form fields, resetting manual flags
+        const today = new Date().toISOString().split('T')[0];
+        const currentTime = format(new Date(), 'HH:mm');
         setFormData({
-          date: new Date().toISOString().split('T')[0],
-          carNo: '',
-          from: '',
-          to: '',
-          emptyHandlingLocation: '',
-          overnightStay: false,
-          dayOverDelayed: false,
-          remarks: '',
-          driverName: '',
-          routeCharge: 0,
-          emptyCharge: 0,
-          totalCharge: 0,
-          kmTravelled: 0,
-          isManualEdited: false,
+          date: today, startTime: currentTime, endDate: today, endTime: currentTime,
+          carNo: '', from: '', to: '', emptyHandlingLocation: '',
+          overnightStay: false, dayOverDelayed: false, remarks: '', agentName: '', driverName: '',
+          routeCharge: 0, emptyCharge: 0, totalCharge: 0, kmTravelled: 0, isManualEdited: false,
         });
+        setIsOvernightStayManual(false);
+        setIsDayOverDelayedManual(false);
         fetchTrips(); // Refresh data and update filters
       } else {
         setError(`ခရီးစဉ်မှတ်တမ်း ထည့်သွင်းရာတွင် အမှားဖြစ်ပွားခဲ့ပါသည်။: ${response.data.error || 'Unknown error'}`);
@@ -590,21 +823,28 @@ function HomePage() {
     setEditingTripId(trip.id);
     setEditFormData({
       date: trip.date,
+      startTime: trip.start_time || '00:00', // Set start time, default if null
+      endDate: trip.end_date || trip.date, // Set end date, default to start date if null
+      endTime: trip.end_time || '00:00', // Set end time, default if null
       carNo: trip.car_no,
       from: trip.from_location,
       to: trip.to_location,
-      emptyHandlingLocation: trip.empty_handling_location || '', // Set empty handling location
-      overnightStay: trip.overnight_status === 'yes', // Convert 'yes'/'no' to boolean
-      dayOverDelayed: trip.day_over_status === 'yes', // Convert 'yes'/'no' to boolean
+      emptyHandlingLocation: trip.empty_handling_location || '',
+      overnightStay: trip.overnight_status === 'yes',
+      dayOverDelayed: trip.day_over_status === 'yes',
       remarks: trip.remarks || '',
+      agentName: trip.agent_name || '',
       driverName: trip.driver_name || '',
       routeCharge: trip.route_charge,
-      emptyCharge: (trip.empty_pickup_charge || 0) + (trip.empty_dropoff_charge || 0), // Combine for display
+      emptyCharge: (trip.empty_pickup_charge || 0) + (trip.empty_dropoff_charge || 0),
       totalCharge: trip.total_charge,
       kmTravelled: trip.km_travelled,
-      isManualEdited: trip.is_manual_edited === 1, // Convert 0/1 to boolean
+      isManualEdited: trip.is_manual_edited === 1,
     });
-    setEditDialogOpen(true); // Open the edit dialog
+    // Reset manual flags for edit form when dialog opens
+    setIsEditOvernightStayManual(false);
+    setIsEditDayOverDelayedManual(false);
+    setEditDialogOpen(true);
   };
 
   // Handle Save Edit button click (from Dialog)
@@ -612,55 +852,58 @@ function HomePage() {
     setError(null);
     setSuccessMessage(null);
 
-    if (!editFormData.date || !editFormData.carNo || !editFormData.from || !editFormData.to || !editFormData.driverName) {
+    // Validation (Updated with new fields)
+    if (!editFormData.date || !editFormData.startTime || !editFormData.endDate || !editFormData.endTime ||
+      !editFormData.carNo || !editFormData.from || !editFormData.to || !editFormData.driverName) {
       setError('လိုအပ်သော အချက်အလက်များကို ပြည့်စုံစွာ ဖြည့်သွင်းပါ။');
       return;
     }
 
-    // Determine empty_pickup_charge and empty_dropoff_charge for backend based on emptyCharge and emptyHandlingLocation
     let empty_pickup_charge_for_backend = 0;
     let empty_dropoff_charge_for_backend = 0;
     let remarks_for_backend = editFormData.remarks;
 
-    if (!editFormData.isManualEdited && editFormData.emptyHandlingLocation) {
-        // Recalculate empty charges if not manually edited
+    if (!editFormData.isManualEdited) { // Recalculate empty charges if not manually edited
+      if (editFormData.emptyHandlingLocation) {
         const emptyChargeResult = calculateEmptyChargeFrontend(editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.date);
+        empty_pickup_charge_for_backend = 0;
+        empty_dropoff_charge_for_backend = 0;
         if (emptyChargeResult.type === 'pickup') {
-            empty_pickup_charge_for_backend = emptyChargeResult.charge;
+          empty_pickup_charge_for_backend = emptyChargeResult.charge;
         } else if (emptyChargeResult.type === 'dropoff') {
-            empty_dropoff_charge_for_backend = emptyChargeResult.charge;
+          empty_dropoff_charge_for_backend = emptyChargeResult.charge;
         }
         if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'pickup' || emptyChargeResult.type === 'dropoff')) {
-            remarks_for_backend += (remarks_for_backend ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
+          remarks_for_backend += (remarks_for_backend ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
         }
+      } else {
+        empty_pickup_charge_for_backend = 0;
+        empty_dropoff_charge_for_backend = 0;
+      }
     } else {
-        // If manually edited, use the combined emptyCharge from editFormData for both pickup/dropoff
-        // This is a simplification; ideally, you'd store/edit pickup and dropoff separately if manual.
-        // For now, we'll put the combined value into empty_pickup_charge and set dropoff to 0 if manually edited.
-        // Or, if the backend handles it as a single 'emptyCharge' field, that's easier.
-        // Given the backend expects empty_pickup_charge and empty_dropoff_charge,
-        // if isManualEdited, we should assume the user manually set the *total* empty charge,
-        // and for simplicity, assign it to pickup and set dropoff to 0.
-        // A better UI would let them manually set pickup and dropoff separately.
-        empty_pickup_charge_for_backend = parseFloat(editFormData.emptyCharge) || 0;
-        empty_dropoff_charge_for_backend = 0; // Assuming combined goes to pickup for simplicity
+      // If manually edited, use the combined emptyCharge from editFormData
+      empty_pickup_charge_for_backend = parseFloat(editFormData.emptyCharge) || 0;
+      empty_dropoff_charge_for_backend = 0; // Assuming combined goes to pickup for simplicity
     }
-
 
     const tripDataToUpdate = {
       date: editFormData.date,
+      startTime: editFormData.startTime,
+      endDate: editFormData.endDate,
+      endTime: editFormData.endTime,
       carNo: editFormData.carNo,
       from_location: editFormData.from,
       to_location: editFormData.to,
-      routeCharge: editFormData.routeCharge, // Use the auto-calculated routeCharge from state
-      empty_pickup_charge: empty_pickup_charge_for_backend, // Send to backend
-      empty_dropoff_charge: empty_dropoff_charge_for_backend, // Send to backend
-      empty_handling_location: editFormData.emptyHandlingLocation || null, // Send selected empty handling location
+      routeCharge: editFormData.routeCharge,
+      empty_pickup_charge: empty_pickup_charge_for_backend,
+      empty_dropoff_charge: empty_dropoff_charge_for_backend,
+      empty_handling_location: editFormData.emptyHandlingLocation || null,
       overnight_status: editFormData.overnightStay ? 'yes' : 'no',
       day_over_status: editFormData.dayOverDelayed ? 'yes' : 'no',
       remarks: remarks_for_backend,
-      total_charge: editFormData.totalCharge, // Use the auto-calculated or manually edited totalCharge from state
-      km_travelled: editFormData.kmTravelled, // Use the auto-calculated kmTravelled from state
+      agent_name: editFormData.agentName || null, // Changed to agent_name
+      total_charge: editFormData.totalCharge,
+      km_travelled: editFormData.kmTravelled,
       fuel_amount: 0,
       fuel_cost: 0,
       driverName: editFormData.driverName,
@@ -688,13 +931,17 @@ function HomePage() {
   const handleCancelEdit = () => {
     setEditingTripId(null);
     setEditDialogOpen(false);
-    // Reset edit form states, resetting isManualEdited to false
+    // Reset edit form states and manual flags
+    const today = new Date().toISOString().split('T')[0];
+    const currentTime = format(new Date(), 'HH:mm');
     setEditFormData({
-      date: '', carNo: '', from: '', to: '', emptyHandlingLocation: '',
-      overnightStay: false, dayOverDelayed: false, remarks: '', driverName: '',
-      routeCharge: 0, emptyCharge: 0, totalCharge: 0, kmTravelled: 0,
-      isManualEdited: false,
+      date: today, startTime: currentTime, endDate: today, endTime: currentTime,
+      carNo: '', from: '', to: '', emptyHandlingLocation: '',
+      overnightStay: false, dayOverDelayed: false, remarks: '', agentName: '', driverName: '',
+      routeCharge: 0, emptyCharge: 0, totalCharge: 0, kmTravelled: 0, isManualEdited: false,
     });
+    setIsEditOvernightStayManual(false);
+    setIsEditDayOverDelayedManual(false);
   };
 
   // Handle Delete button click
@@ -735,17 +982,20 @@ function HomePage() {
     const worksheet = XLSX.utils.json_to_sheet(filteredTrips.map(trip => ({
       "No.": trip.id,
       "Date": trip.date,
+      "Start Time": trip.start_time || '', // Export Start Time
+      "End Date": trip.end_date || '',   // Export End Date
+      "End Time": trip.end_time || '',   // Export End Time
       "Car No": trip.car_no,
-      "ယာဉ်မောင်း": trip.driver_name,
+      "ယာဉ်မောင်း": trip.driver_name || '',
       "မှ (From)": trip.from_location,
       "သို့ (To)": trip.to_location,
       "လမ်းကြောင်းခ (Route Charge)": trip.route_charge,
-      "အခွံတင်/ချ နေရာ": trip.empty_handling_location || '', // NEW: Export empty handling location
-      "အခွံတင်ခ (Empty Pickup Charge)": trip.empty_pickup_charge, // Keep for export detail
-      "အခွံချခ (Empty Drop-off Charge)": trip.empty_dropoff_charge, // Keep for export detail
-      "အသား/အခွံ အိပ်": trip.overnight_status,
-      "နေ့ကျော်/ပြီး": trip.day_over_status,
-      "မှတ်ချက်": trip.remarks,
+      "အခွံတင်/ချ နေရာ": trip.empty_handling_location || '',
+      "အခွံတင်/ချ ခ (Empty Pickup Charge)": trip.empty_pickup_dropoff_charge,// Keep for export detail
+      "အသား/အခွံ အိပ်": trip.overnight_status === 'yes' ? 'အသားအိပ်' : '',
+      "နေ့ကျော်/ပြီး": trip.day_over_status === 'yes' ? 'နေ့ကျော်' : '',
+      "မှတ်ချက်": `${trip.end_date || ''} ${trip.end_time || ''} ${trip.agent_name || ''} ${trip.remarks || ''}`.trim(), // Combined remarks
+      "အေးဂျင့် အမည်": trip.agent_name || '', // Export agent name separately for clarity in Excel
       "စုစုပေါင်း": trip.total_charge,
       "KM သွားခဲ့မှု": trip.km_travelled,
     })));
@@ -757,12 +1007,30 @@ function HomePage() {
     const data = new Blob([excelBuffer], { type: 'application/octet-stream' });
     saveAs(data, 'trip_records.xlsx');
   };
+  // Promise တစ်ခုကို ပြန်ပေးတဲ့ delay function ကို အရင်ဆုံးရေးပါ
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const handlePrintReport = async () => {
+    // ပထမဆုံး၊ print view ကို ပြပါ
+    setShowPrintView(true);
+
+    // ပြီးရင် UI update ဖြစ်ဖို့အတွက် ခဏစောင့်ပါ
+    await delay(50); // 50ms လောက်စောင့်ပါ
+
+    // ပြီးမှ print dialog ကို ခေါ်ပါ
+    window.print();
+
+    // (optional) Print ထုတ်ပြီးရင် မူရင်း view ကို ပြန်ပြောင်းပါ
+    // setShowPrintView(false);
+  };
+
 
   // Calculate Grand Total for "စုစုပေါင်း" column
   const grandTotalCharge = filteredTrips.reduce((sum, trip) => sum + (trip.total_charge || 0), 0);
 
   // Month names for dropdown
   const monthNames = useMemo(() => [
+    { value: '', label: 'အားလုံး' }, // "အားလုံး" for month filter
     { value: 1, label: 'ဇန်နဝါရီ' },
     { value: 2, label: 'ဖေဖော်ဝါရီ' },
     { value: 3, label: 'မတ်' },
@@ -777,488 +1045,729 @@ function HomePage() {
     { value: 12, label: 'ဒီဇင်ဘာ' },
   ], []);
 
+  const yearsForFilter = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const yearsArray = Array.from({ length: 7 }, (_, i) => currentYear - 5 + i);
+    return [{ value: '', label: 'အားလုံး' }, ...yearsArray];
+  }, []);
+
+  const groupedRoutes = {
+    "ဆိပ်ကမ်းများ (Ports)": [
+      { "id": 1, "route": "အေးရှားဝေါ" },
+      { "id": 2, "route": "MIP" },
+      { "id": 3, "route": "သီလဝါ" }
+    ],
+    "English Routes": [
+      { "id": 4, "route": "RG" },
+      { "id": 5, "route": "RGL/KL-SPT-RGL/KL" },
+      { "id": 6, "route": "SEZ/Thilawar Zone" }
+    ],
+    "ဂ": [
+      { "id": 7, "route": "ဂန္ဒီ" }
+    ],
+    "စ": [
+      { "id": 8, "route": "စက်ဆန်း" },
+      { "id": 9, "route": "စော်ဘွားကြီးကုန်း" },
+      { "id": 10, "route": "ဆင်မလိုက်" },
+      { "id": 11, "route": "ဆားမလောက်" }
+    ],
+    "တ": [
+      { "id": 12, "route": "တိုက်ကြီး" },
+      { "id": 13, "route": "တောင်ဒဂုံ(ဇုံ ၁/၂/၃)" },
+      { "id": 14, "route": "တောင်ဥက္ကလာပ" }
+    ],
+    "ထ": [
+      { "id": 15, "route": "ထန်းတပင်" },
+      { "id": 16, "route": "ထောက်ကြန့်" }
+    ],
+    "ဒ": [
+      { "id": 17, "route": "ဒဂုံဆိပ်ကမ်း" }
+    ],
+    "န": [
+      { "id": 18, "route": "ညောင်တန်း" }
+    ],
+    "ပ": [
+      { "id": 19, "route": "ပျဥ်းမပင်" },
+      { "id": 20, "route": "ပုစွန်တောင်စျေး" },
+      { "id": 21, "route": "ပုလဲလမ်းဆုံ" },
+      { "id": 22, "route": "ပဲခူး(မြို့ရှောင်လမ်းအတွင်း)" },
+      { "id": 23, "route": "ပဲခူး(မြို့ရှောင်လမ်းအကျော်)" }
+    ],
+    "ဖ": [
+      { "id": 24, "route": "ဖော့ကန်" }
+    ],
+    "ဘ": [
+      { "id": 25, "route": "ဘုရင့်နောင်" }
+    ],
+    "ဗ": [
+      { "id": 26, "route": "ဗိုလ်တထောင်" }
+    ],
+    "မ": [
+      { "id": 27, "route": "မင်္ဂလာဒုံ" },
+      { "id": 28, "route": "မြစိမ်းရောင်" },
+      { "id": 29, "route": "မြောင်းတကာ" },
+      { "id": 30, "route": "မြောက်ဒဂုံ" },
+      { "id": 31, "route": "မြောက်ဥက္ကလာပ" },
+      { "id": 32, "route": "မှော်ဘီ" }
+    ],
+    "ရ": [
+      { "id": 33, "route": "ရွာသာကြီး" },
+      { "id": 34, "route": "ရွှေပြည်သာ" },
+      { "id": 35, "route": "ရွှေပေါက်ကံ" },
+      { "id": 36, "route": "ရွှေသန်လျင်" },
+      { "id": 37, "route": "ရွှေလင်ဗန်း" }
+    ],
+    "လ": [
+      { "id": 38, "route": "လှည်းကူး" },
+      { "id": 39, "route": "လှိုင်သာယာ(Zone-1,2,3,4)" },
+      { "id": 40, "route": "လှိုင်သာယာ(Zone-5)" },
+      { "id": 41, "route": "လှော်ကား" }
+    ],
+    "သ": [
+      { "id": 42, "route": "သာကေတ" },
+      { "id": 43, "route": "သာဓုကန်" },
+      { "id": 44, "route": "သန်လျင်" },
+      { "id": 45, "route": "သရက်ပင်ချောင်" }
+    ],
+    "ဝ": [
+      { "id": 46, "route": "ဝါးတရာ" }
+    ],
+    "အ": [
+      { "id": 47, "route": "အင်းစိန်" },
+      { "id": 48, "route": "အင်းတကော်" },
+      { "id": 49, "route": "အနော်ရထာ" },
+      { "id": 50, "route": "အနောက်ပိုင်းတက္ကသိုလ်" },
+      { "id": 51, "route": "အလုံ" },
+      { "id": 52, "route": "အောင်ဆန်း" },
+      { "id": 53, "route": "အရှေ့ဒဂုံ" }
+    ]
+  };
 
   return (
-    <div className="bg-white shadow-md rounded-lg p-6">
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-        အချက်အလက် ထည့်သွင်းခြင်း
-      </h2>
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
+    <>
+      {/* Main HomePage Content - conditionally rendered */}
+      {!showPrintView && (
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+            အချက်အလက် ထည့်သွင်းခြင်း
+          </h2>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
 
-      {/* New Form Layout - Single Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {/* ရက်စွဲ (Date) */}
-        <div>
-          <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
-            ရက်စွဲ (Date)
-          </label>
-          <TextField
-            type="date"
-            id="date"
-            name="date"
-            value={formData.date}
-            onChange={handleChange}
-            fullWidth
-            InputLabelProps={{ shrink: true }}
-            variant="outlined"
-            size="small"
-            className="rounded-md"
-          />
-        </div>
-
-        {/* ကားနံပါတ် (Car No) */}
-        <div>
-             <label htmlFor="carNo" className="block text-sm font-medium text-gray-700 mb-1">
-            ကားနံပါတ် (Car No)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="carNo"
-              name="carNo"
-              value={formData.carNo}
-              onChange={handleCarNoChange}
-            >
-              <MenuItem value="">ကားနံပါတ် ရွေးပါ</MenuItem>
-              {carNumbersData.map((car, index) => (
-                <MenuItem key={index} value={car.number}>
-                  {car.number} ({car.gate})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
-
-        {/* ယာဉ်မောင်းအမည် (Driver Name) */}
-        <div>
-             <label htmlFor="driverName" className="block text-sm font-medium text-gray-700 mb-1">
-            ယာဉ်မောင်းအမည် (Driver Name)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="driverName"
-              name="driverName"
-              value={formData.driverName}
-              onChange={handleChange}
-            >
-              <MenuItem value="">ယာဉ်မောင်း ရွေးပါ</MenuItem>
-              {driverNames.map((name, index) => (
-                <MenuItem key={index} value={name}>
-                  {name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
-
-        {/* မှ (From) */}
-        <div>
-             <label htmlFor="from" className="block text-sm font-medium text-gray-700 mb-1">
-            မှ (From)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="from"
-              name="from"
-              value={formData.from}
-              onChange={handleChange}
-            >
-              <MenuItem value="">နေရာ ရွေးပါ</MenuItem>
-              {['အေးရှားဝေါ', 'MIP', 'သီလဝါ'].map((location, index) => (
-                <MenuItem key={index} value={location}>
-                  {location}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
-
-        {/* သို့ (To) */}
-        <div>
-             <label htmlFor="to" className="block text-sm font-medium text-gray-700 mb-1">
-            သို့ (To)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="to"
-              name="to"
-              value={formData.to}
-              onChange={handleChange}
-            >
-              <MenuItem value="">ခရီးစဉ် ရွေးပါ</MenuItem>
-              {currentRouteCharges.map((route, index) => (
-                <MenuItem key={index} value={route.route}>
-                  {route.route}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
-
-        {/* လမ်းကြောင်းခ (Route Charge) - Display only */}
-        <div>
-          <label htmlFor="routeCharge" className="block text-sm font-medium text-gray-700 mb-1">
-            လမ်းကြောင်းခ <span className="text-xs text-gray-500">(Auto)</span>
-          </label>
-          <TextField
-            type="text"
-            id="routeCharge"
-            name="routeCharge"
-            value={formData.routeCharge || ''}
-            fullWidth
-            variant="outlined"
-            size="small"
-            InputProps={{
-              readOnly: true,
-              endAdornment: (
-                <Typography variant="body2" color="textSecondary">
-                  {formData.routeCharge ? formatMMK(formData.routeCharge) : ''}
-                </Typography>
-              ),
-            }}
-            className="bg-gray-100 rounded-md"
-          />
-        </div>
-
-        {/* NEW: အခွံတင်/ချ နေရာ (Empty Handling Location) */}
-        {/* Only show if "from" or "to" is a port */}
-        {(portLocations.has(formData.from) || portLocations.has(formData.to)) && (
-          <div>
-            <label htmlFor="emptyHandlingLocation" className="block text-sm font-medium text-gray-700 mb-1">
-              အခွံတင်/ချ နေရာ
-            </label>
-            <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-              <Select
-                id="emptyHandlingLocation"
-                name="emptyHandlingLocation"
-                value={formData.emptyHandlingLocation}
+          {/* New Form Layout - Single Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            {/* ရက်စွဲ (Date) */}
+            <div>
+              <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
+                ရက်စွဲ (Date)
+              </label>
+              <TextField
+                type="date"
+                id="date"
+                name="date"
+                value={formData.date}
                 onChange={handleChange}
-              >
-                <MenuItem value=""><em>ရွေးချယ်ပါ (မရှိလျှင် မရွေးပါ)</em></MenuItem>
-                {emptyLocationsOptions.map((loc, index) => (
-                  <MenuItem key={index} value={loc}>
-                    {loc}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </div>
-        )}
-
-        {/* NEW: အခွံတင်/ချ (Empty Charge) - Combined display, auto-calculated */}
-        {/* Only show if "from" or "to" is a port */}
-        {(portLocations.has(formData.from) || portLocations.has(formData.to)) && (
-          <div>
-            <label htmlFor="emptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
-              အခွံတင်/ချ <span className="text-xs text-gray-500">(Auto)</span>
-            </label>
-            <TextField
-              type="text"
-              id="emptyCharge"
-              name="emptyCharge"
-              value={formData.emptyCharge || ''}
-              fullWidth
-              variant="outlined"
-              size="small"
-              InputProps={{
-                readOnly: true,
-                endAdornment: (
-                  <Typography variant="body2" color="textSecondary">
-                    {formData.emptyCharge ? formatMMK(formData.emptyCharge) : ''}
-                  </Typography>
-                ),
-              }}
-              className="bg-gray-100 rounded-md"
-            />
-          </div>
-        )}
-
-
-        {/* KM (ခရီးအကွာအဝေး) - Display only */}
-        <div>
-          <label htmlFor="kmTravelled" className="block text-sm font-medium text-gray-700 mb-1">
-            KM (ခရီးအကွာအဝေး) <span className="text-xs text-gray-500">(Auto)</span>
-          </label>
-          <TextField
-            type="number"
-            id="kmTravelled"
-            name="kmTravelled"
-            value={formData.kmTravelled || ''}
-            fullWidth
-            variant="outlined"
-            size="small"
-            InputProps={{ readOnly: true }}
-            className="bg-gray-100 rounded-md"
-          />
-        </div>
-
-        {/* အသားအိပ် (Overnight Stay with Cargo) */}
-        <div className="flex items-center">
-          <FormControlLabel
-            control={
-              <Checkbox
-                id="overnightStay"
-                name="overnightStay"
-                checked={formData.overnightStay}
-                onChange={handleChange}
-                sx={{ p: 0, mr: 1 }}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                variant="outlined"
+                size="small"
+                className="rounded-md"
               />
-            }
-            label="အသားအိပ် (Overnight Stay with Cargo)"
-            className="text-sm font-medium text-gray-700"
-          />
-        </div>
+            </div>
 
-        {/* နေ့ကျော်/ပြီး (Day Over/Delayed) */}
-        <div className="flex items-center">
-          <FormControlLabel
-            control={
-              <Checkbox
-                id="dayOverDelayed"
-                name="dayOverDelayed"
-                checked={formData.dayOverDelayed}
+            {/* NEW: ခရီးစဉ် စတင်ချိန် (Start Time) */}
+            <div>
+              <label htmlFor="startTime" className="block text-sm font-medium text-gray-700 mb-1">
+                ခရီးစဉ် စတင်ချိန်
+              </label>
+              <TextField
+                type="time"
+                id="startTime"
+                name="startTime"
+                value={formData.startTime}
                 onChange={handleChange}
-                sx={{ p: 0, mr: 1 }}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                variant="outlined"
+                size="small"
+                className="rounded-md"
               />
-            }
-            label="နေ့ကျော်/ပြီး (Day Over/Delayed)"
-            className="text-sm font-medium text-gray-700"
-          />
-        </div>
+            </div>
 
-        {/* Remarks (spanning all columns) */}
-        <div className="col-span-full">
-          <label htmlFor="remarks" className="block text-sm font-medium text-gray-700 mb-1">
-            မှတ်ချက် (Remarks)
-          </label>
-          <TextField
-            id="remarks"
-            name="remarks"
-            multiline
-            rows={3}
-            value={formData.remarks}
-            onChange={handleChange}
-            fullWidth
-            variant="outlined"
-            size="small"
-            placeholder="လိုအပ်သည့် မှတ်ချက်များ ထည့်သွင်းပါ..."
-            className="rounded-md"
-          />
-        </div>
-      </div>
+            {/* NEW: ခရီးစဉ် ပြီးဆုံးရက် (End Date) */}
+            <div>
+              <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+                ခရီးစဉ် ပြီးဆုံးရက်
+              </label>
+              <TextField
+                type="date"
+                id="endDate"
+                name="endDate"
+                value={formData.endDate}
+                onChange={handleChange}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                variant="outlined"
+                size="small"
+                className="rounded-md"
+              />
+            </div>
 
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 2 }}>
-        <Typography variant="h6" sx={{ mr: 2, color: 'text.primary' }}>
-          စုစုပေါင်း: {formatMMK(formData.totalCharge)}
-        </Typography>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={formData.isManualEdited}
-              onChange={(e) => setFormData(prev => ({ ...prev, isManualEdited: e.target.checked }))}
-              name="isManualEdited"
-              color="primary"
-            />
-          }
-          label="စုစုပေါင်းကျသင့်ငွေကို ကိုယ်တိုင်ပြင်မည်"
-          sx={{ mr: 2 }}
-        />
-        <Button
-          onClick={handleCalculateAndSave}
-          variant="contained"
-          color="primary"
-          sx={{ py: 1.5, px: 4 }}
-        >
-          တွက်ချက်ရန် (Calculate)
-        </Button>
-      </Box>
+            {/* NEW: ခရီးစဉ် ပြီးဆုံးချိန် (End Time) */}
+            <div>
+              <label htmlFor="endTime" className="block text-sm font-medium text-gray-700 mb-1">
+                ခရီးစဉ် ပြီးဆုံးချိန်
+              </label>
+              <TextField
+                type="time"
+                id="endTime"
+                name="endTime"
+                value={formData.endTime}
+                onChange={handleChange}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                variant="outlined"
+                size="small"
+                className="rounded-md"
+              />
+            </div>
 
-      <hr className="my-8 border-gray-300" />
+            {/* ကားနံပါတ် (Car No) */}
+            <div>
+              <label htmlFor="carNo" className="block text-sm font-medium text-gray-700 mb-1">
+                ကားနံပါတ် (Car No)
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                <Select
+                  id="carNo"
+                  name="carNo"
+                  value={formData.carNo}
+                  onChange={handleCarNoChange}
+                >
+                  <MenuItem value="">ကားနံပါတ် ရွေးပါ</MenuItem>
+                  {carNumbersData.map((car, index) => (
+                    <MenuItem key={index} value={car.number}>
+                      {car.number} ({car.gate})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
 
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Typography variant="h5" component="h2" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
-          ရလဒ်များ ပြသမှု
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            onClick={exportToExcel}
-            variant="contained"
-            color="secondary"
-            sx={{ py: 1, px: 2, fontSize: '0.875rem' }}
-          >
-            Excel Export
-          </Button>
-        </Box>
-      </Box>
+            {/* ယာဉ်မောင်းအမည် (Driver Name) */}
+            <div>
+              <label htmlFor="driverName" className="block text-sm font-medium text-gray-700 mb-1">
+                ယာဉ်မောင်းအမည် (Driver Name)
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                <Select
+                  id="driverName"
+                  name="driverName"
+                  value={formData.driverName}
+                  onChange={handleChange}
+                >
+                  <MenuItem value="">ယာဉ်မောင်း ရွေးပါ</MenuItem>
+                  {driverNames.map((name, index) => (
+                    <MenuItem key={index} value={name}>
+                      {name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
 
-      {/* Year, Month, and Car No Filters for HomePage Table */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg shadow-inner">
-        {/* နှစ် (Year) Filter */}
-        <div>
-          <label htmlFor="filterYear" className="block text-sm font-medium text-gray-700 mb-1">
-            နှစ် (Year)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="filterYear"
-              name="filterYear"
-              value={filterYear}
-              onChange={(e) => setFilterYear(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
-            >
-              <MenuItem value="">အားလုံး</MenuItem>
-              {availableYears.filter(year => year !== null && year !== undefined).map((year, index) => (
-                <MenuItem key={index} value={year}>
-                  {year}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
+            {/* မှ (From) */}
+            <div>
+              <label htmlFor="from" className="block text-sm font-medium text-gray-700 mb-1">
+                မှ (From)
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                {/* <InputLabel id="from-label">ခရီးစဉ် ရွေးပါ</InputLabel> */}
+                <Select
+                  labelId="from-label"
+                  id="from"
+                  name="from"
+                  value={formData.from}
+                  onChange={handleChange}
+                >
+                  {Object.keys(groupedRoutes).flatMap(groupName => [
+                    <ListSubheader key={groupName}>{groupName}</ListSubheader>,
+                    ...groupedRoutes[groupName].map((route) => (
+                      <MenuItem key={route.id} value={route.route}>
+                        {route.route}
+                      </MenuItem>
+                    ))
+                  ])}
+                </Select>
+              </FormControl>
+            </div>
 
-        {/* လ (Month) Filter */}
-        <div>
-          <label htmlFor="filterMonth" className="block text-sm font-medium text-gray-700 mb-1">
-            လ (Month)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="filterMonth"
-              name="filterMonth"
-              value={filterMonth}
-              onChange={(e) => setFilterMonth(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
-            >
-              <MenuItem value="">အားလုံး</MenuItem>
-              {monthNames.filter(month => month !== null && month !== undefined).map((month) => (
-                <MenuItem key={month.value} value={month.value}>
-                  {month.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
+            {/* သို့ (To) */}
+            <div>
+              <label htmlFor="to" className="block text-sm font-medium text-gray-700 mb-1">
+                သို့ (To)
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                {/* <InputLabel id="to-label">ခရီးစဉ် ရွေးပါ</InputLabel> */}
+                <Select
+                  labelId="to-label"
+                  id="to"
+                  name="to"
+                  value={formData.to}
+                  onChange={handleChange}
+                >
+                  {Object.keys(groupedRoutes).flatMap(groupName => [
+                    <ListSubheader key={groupName}>{groupName}</ListSubheader>,
+                    ...groupedRoutes[groupName].map((route) => (
+                      <MenuItem key={route.id} value={route.route}>
+                        {route.route}
+                      </MenuItem>
+                    ))
+                  ])}
+                </Select>
+              </FormControl>
+            </div>
 
-        {/* ကားနံပါတ် (Car No) Filter */}
-        <div>
-          <label htmlFor="filterCarNo" className="block text-sm font-medium text-gray-700 mb-1">
-            ကားနံပါတ် (Car No)
-          </label>
-          <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-            <Select
-              id="filterCarNo"
-              name="filterCarNo"
-              value={filterCarNo}
-              onChange={(e) => setFilterCarNo(e.target.value)}
-            >
-              <MenuItem value="">အားလုံး</MenuItem>
-              {uniqueCarNumbersForFilter.filter(carNo => carNo !== null && carNo !== undefined).map((carNo, index) => (
-                <MenuItem key={index} value={carNo}>
-                  {carNo}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </div>
-      </div>
+            {/* လမ်းကြောင်းခ (Route Charge) - Display only */}
+            <div>
+              <label htmlFor="routeCharge" className="block text-sm font-medium text-gray-700 mb-1">
+                လမ်းကြောင်းခ <span className="text-xs text-gray-500">(Auto)</span>
+              </label>
+              <TextField
+                type="text"
+                id="routeCharge"
+                name="routeCharge"
+                value={formData.routeCharge || ''}
+                fullWidth
+                variant="outlined"
+                size="small"
+                InputProps={{
+                  readOnly: true,
+                  endAdornment: (
+                    <Typography variant="body2" color="textSecondary">
+                      {formData.routeCharge ? formatMMK(formData.routeCharge) : ''}
+                    </Typography>
+                  ),
+                }}
+                className="bg-gray-100 rounded-md"
+              />
+            </div>
+
+            {/* အခွံတင်/ချ နေရာ (Empty Handling Location) */}
+
+            <div>
+              <label htmlFor="emptyHandlingLocation" className="block text-sm font-medium text-gray-700 mb-1">
+                အခွံတင်/ချ နေရာ
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                <Select
+                  id="emptyHandlingLocation"
+                  name="emptyHandlingLocation"
+                  value={formData.emptyHandlingLocation}
+                  onChange={handleChange}
+                >
+                  <MenuItem value=""><em>ရွေးချယ်ပါ (မရှိလျှင် မရွေးပါ)</em></MenuItem>
+                  {emptyLocationsOptions.map((loc, index) => (
+                    <MenuItem key={index} value={loc}>
+                      {loc}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
 
 
-      {/* Results Table */}
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper} sx={{ mt: 4 }}>
-          <Table stickyHeader aria-label="trip records table">
-            <TableHead>
-              <TableRow sx={{ backgroundColor: '#f0f0f0' }}>
-                <TableCell padding="checkbox">
+
+            <div>
+              <label htmlFor="emptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
+                အခွံတင်/ချ <span className="text-xs text-gray-500">(Auto)</span>
+              </label>
+              <TextField
+                type="text"
+                id="emptyCharge"
+                name="emptyCharge"
+                value={formData.emptyCharge || ''}
+                fullWidth
+                variant="outlined"
+                size="small"
+                InputProps={{
+                  readOnly: true,
+                  endAdornment: (
+                    <Typography variant="body2" color="textSecondary">
+                      {formData.emptyCharge ? formatMMK(formData.emptyCharge) : ''}
+                    </Typography>
+                  ),
+                }}
+                className="bg-gray-100 rounded-md"
+              />
+            </div>
+
+
+            {/* Remarks (spanning all columns, adjusted to only 1 column below other elements) */}
+            {/* NEW: Agent Name Field */}
+            <div>
+              <label htmlFor="agentName" className="block text-sm font-medium text-gray-700 mb-1">
+                အေးဂျင့် အမည်
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                <Select
+                  id="agentName"
+                  name="agentName"
+                  value={formData.agentName}
+                  onChange={handleChange}
+                >
+                  <MenuItem value=""><em>ရွေးချယ်ပါ</em></MenuItem>
+                  {agentNames.map((name, index) => (
+                    <MenuItem key={index} value={name}>
+                      {name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
+
+            {/* အသားအိပ် (Overnight Stay with Cargo) */}
+            <div className="flex items-center">
+              <FormControlLabel
+                control={
                   <Checkbox
-                    checked={selectedRows.size === filteredTrips.length && filteredTrips.length > 0}
-                    onChange={handleSelectAllRows}
+                    id="overnightStay"
+                    name="overnightStay"
+                    checked={formData.overnightStay}
+                    onChange={handleChange}
+                    sx={{ p: 0, mr: 1 }}
                   />
-                </TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>No.</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Date</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Car No</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>ယာဉ်မောင်း</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>မှ (From)</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>သို့ (To)</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>လမ်းကြောင်းခ</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ</TableCell> {/* Combined column */}
-                <TableCell sx={{ fontWeight: 'bold' }}>ညအိပ်ခ</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>ရက်ကျော်/ပြီး</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>မှတ်ချက်</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>စုစုပေါင်း</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>KM သွားခဲ့မှု</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>လုပ်ဆောင်ချက်များ</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredTrips.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={15} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                    တွက်ချက်ထားသော ရလဒ်များ မရှိသေးပါ သို့မဟုတ် Filter နှင့် ကိုက်ညီသော Data မရှိပါ။
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredTrips.map((trip) => {
-                  const isSelected = selectedRows.has(trip.id);
-                  const combinedEmptyCharge = (trip.empty_pickup_charge || 0) + (trip.empty_dropoff_charge || 0);
-                  return (
-                    <TableRow
-                      key={trip.id}
-                      selected={isSelected}
-                      sx={{ '&:hover': { bgcolor: '#f5f5f5' } }}
-                    >
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          checked={isSelected}
-                          onChange={() => handleRowSelect(trip.id)}
-                        />
-                      </TableCell>
-                      <TableCell>{trip.id}</TableCell>
-                      <TableCell>{trip.date}</TableCell>
-                      <TableCell>{trip.car_no}</TableCell>
-                      <TableCell>{trip.driver_name}</TableCell>
-                      <TableCell>{trip.from_location}</TableCell>
-                      <TableCell>{trip.to_location}</TableCell>
-                      <TableCell>{formatMMK(trip.route_charge)}</TableCell>
-                      <TableCell>{formatMMK(combinedEmptyCharge)}</TableCell> {/* Display combined empty charge */}
-                      <TableCell>{trip.overnight_status === 'yes' ? 'ရှိသည်' : 'မရှိပါ'}</TableCell>
-                      <TableCell>{trip.day_over_status === 'yes' ? 'ရှိသည်' : 'မရှိပါ'}</TableCell>
-                      <TableCell>{trip.remarks}</TableCell>
-                      <TableCell>{formatMMK(trip.total_charge)}</TableCell>
-                      <TableCell>{trip.km_travelled}</TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', gap: 0.5 }}>
-                          <IconButton color="info" size="small" onClick={() => handleEdit(trip)}>
-                            <EditIcon />
-                          </IconButton>
-                          <IconButton color="error" size="small" onClick={() => handleDelete(trip)}>
-                            <DeleteIcon />
-                          </IconButton>
-                        </Box>
+                }
+                label="အသားအိပ် (Overnight Stay with Cargo)"
+                className="text-sm font-medium text-gray-700"
+              />
+            </div>
+
+            {/* နေ့ကျော်/ပြီး (Day Over/Delayed) */}
+            <div className="flex items-center">
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    id="dayOverDelayed"
+                    name="dayOverDelayed"
+                    checked={formData.dayOverDelayed}
+                    onChange={handleChange}
+                    sx={{ p: 0, mr: 1 }}
+                  />
+                }
+                label="နေ့ကျော်/ပြီး (Day Over/Delayed)"
+                className="text-sm font-medium text-gray-700"
+              />
+            </div>
+
+            {/* Remarks - Span remaining columns */}
+            <div className="col-span-full"> {/* Changed to col-span-full to ensure it always spans */}
+              <label htmlFor="remarks" className="block text-sm font-medium text-gray-700 mb-1">
+                မှတ်ချက် (Remarks)
+              </label>
+              <TextField
+                id="remarks"
+                name="remarks"
+                multiline
+                rows={3}
+                value={formData.remarks}
+                onChange={handleChange}
+                fullWidth
+                variant="outlined"
+                size="small"
+                placeholder="လိုအပ်သည့် မှတ်ချက်များ ထည့်သွင်းပါ..."
+                className="rounded-md"
+              />
+            </div>
+          </div>
+
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 2 }}>
+            <Typography variant="h6" sx={{ mr: 2, color: 'text.primary' }}>
+              စုစုပေါင်း: {formatMMK(formData.totalCharge)}
+            </Typography>
+            {/* <FormControlLabel
+              control={
+                <Checkbox
+                  checked={formData.isManualEdited}
+                  onChange={(e) => setFormData(prev => ({ ...prev, isManualEdited: e.target.checked }))}
+                  name="isManualEdited"
+                  color="primary"
+                />
+              }
+              label="စုစုပေါင်းကျသင့်ငွေကို ကိုယ်တိုင်ပြင်မည်"
+              sx={{ mr: 2 }}
+            /> */}
+
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 2 }}>
+            <Button
+              onClick={handleCalculateAndSave}
+              variant="contained"
+              color="primary"
+              sx={{ py: 1.5, px: 4 }}
+            >
+              စာရင်းထည့်သွင်းရန်
+            </Button>
+          </Box>
+
+          <hr className="my-8 border-gray-300" />
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <Typography variant="h5" component="h2" sx={{ color: '#1976d2', fontWeight: 'bold' }}>
+              ရလဒ်များ ပြသမှု
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                onClick={exportToExcel}
+                variant="contained"
+                color="secondary"
+                sx={{ py: 1, px: 2, fontSize: '0.875rem' }}
+              >
+                Excel Export
+              </Button>
+              {/* Print Report Button - now uses browser's native print */}
+              <Button
+                onClick={handlePrintReport}
+                variant="contained"
+                color="primary"
+                sx={{ py: 1, px: 2, fontSize: '0.875rem' }}
+              >
+                Print Report
+              </Button>
+            </Box>
+          </Box>
+
+          {/* Year, Month, and Car No Filters for HomePage Table */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg shadow-inner">
+            {/* နှစ် (Year) Filter */}
+            <div>
+              <label htmlFor="filterYear" className="block text-sm font-medium text-gray-700 mb-1">
+                နှစ် (Year)
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                <Select
+                  id="filterYear"
+                  name="filterYear"
+                  value={filterYear}
+                  onChange={(e) => setFilterYear(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
+                >
+                  <MenuItem value="">အားလုံး</MenuItem>
+                  {availableYears.filter(year => year !== null && year !== undefined).map((year, index) => (
+                    <MenuItem key={index} value={year}>
+                      {year}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
+
+            {/* လ (Month) Filter */}
+            <div>
+              <label htmlFor="filterMonth" className="block text-sm font-medium text-gray-700 mb-1">
+                လ (Month)
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                <Select
+                  id="filterMonth"
+                  name="filterMonth"
+                  value={filterMonth}
+                  onChange={(e) => setFilterMonth(e.target.value === "" ? "" : parseInt(e.target.value, 10))}
+                >
+                  <MenuItem value="">အားလုံး</MenuItem>
+                  {monthNames.filter(month => month !== null && month !== undefined).map((month) => (
+                    <MenuItem key={month.value} value={month.value}>
+                      {month.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
+
+            {/* ကားနံပါတ် (Car No) Filter */}
+            <div>
+              <label htmlFor="filterCarNo" className="block text-sm font-medium text-gray-700 mb-1">
+                ကားနံပါတ် (Car No)
+              </label>
+              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                <Select
+                  id="filterCarNo"
+                  name="filterCarNo"
+                  value={filterCarNo}
+                  onChange={(e) => setFilterCarNo(e.target.value)}
+                >
+                  <MenuItem value="">အားလုံး</MenuItem>
+                  {uniqueCarNumbersForFilter.filter(carNo => carNo !== null && carNo !== undefined).map((carNo, index) => (
+                    <MenuItem key={index} value={carNo}>
+                      {carNo}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
+          </div>
+
+
+          {/* Results Table */}
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <TableContainer component={Paper} sx={{ mt: 4 }}>
+              <Table stickyHeader aria-label="trip records table">
+                <TableHead>
+                  <TableRow sx={{ backgroundColor: '#f0f0f0' }}>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={selectedRows.size === filteredTrips.length && filteredTrips.length > 0}
+                        onChange={handleSelectAllRows}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>No.</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>နေ့စွဲ</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>ကားနံပါတ်</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>မှ (From)</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>သို့ (To)</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>လမ်းကြောင်းခ</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>အသား/အခွံအိပ်</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>နေ့ကျော်/ပြီး</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>မှတ်ချက်</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>စုစုပေါင်း</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredTrips.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={13} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                        တွက်ချက်ထားသော ရလဒ်များ မရှိသေးပါ သို့မဟုတ် Filter နှင့် ကိုက်ညီသော Data မရှိပါ။
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              )}
-              {/* Grand Total Row */}
-              {filteredTrips.length > 0 && (
-                <TableRow sx={{ backgroundColor: '#e0e0e0', fontWeight: 'bold', borderTop: '2px solid #ccc' }}>
-                  <TableCell colSpan={12} align="right" sx={{ fontWeight: 'bold' }}>
-                    စုစုပေါင်း (Grand Total):
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>
-                    {formatMMK(grandTotalCharge)}
-                  </TableCell>
-                  <TableCell colSpan={2}></TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                  ) : (
+                    filteredTrips.map((trip, index) => {
+                      const isSelected = selectedRows.has(trip.id);
+                      const combinedEmptyCharge = (trip.empty_pickup_charge || 0) + (trip.empty_dropoff_charge || 0);
+                      const displayRemarks = `${trip.end_date || ''} ${trip.end_time || ''} ${trip.agent_name || ''} ${trip.remarks || ''}`.trim();
+
+                      return (
+                        <TableRow
+                          key={trip.id}
+                          selected={isSelected}
+                          sx={{ '&:hover': { bgcolor: '#f5f5f5' } }}
+                        >
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={isSelected}
+                              onChange={() => handleRowSelect(trip.id)}
+                            />
+                          </TableCell>
+                          <TableCell>{index + 1}</TableCell> 
+                          <TableCell>{trip.date}</TableCell> 
+                          <TableCell>{trip.car_no}</TableCell>
+                          <TableCell>{trip.from_location}</TableCell> 
+                          <TableCell>{trip.to_location}</TableCell> 
+                          <TableCell>{formatMMK(trip.route_charge)}</TableCell>
+                          <TableCell>{formatMMK(trip.empty_pickup_dropoff_charge)}</TableCell> 
+                          <TableCell>{trip.overnight_status === 'yes' ? 'အသားအိပ်' : ''}</TableCell> 
+                          <TableCell>{trip.day_over_status === 'yes' ? 'နေ့ကျော်' : ''}</TableCell> 
+                          <TableCell>{displayRemarks}</TableCell> 
+                          <TableCell>{formatMMK(trip.total_charge)}</TableCell> 
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 0.5 }}>
+                              <IconButton color="info" size="small" onClick={() => handleEdit(trip)}>
+                                <EditIcon />
+                              </IconButton>
+                              <IconButton color="error" size="small" onClick={() => handleDelete(trip)}>
+                                <DeleteIcon />
+                              </IconButton>
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                  {/* Grand Total Row */}
+                  {filteredTrips.length > 0 && (
+                    <TableRow sx={{ backgroundColor: '#e0e0e0', fontWeight: 'bold', borderTop: '2px solid #ccc' }}>
+                      <TableCell colSpan={11} align="right" sx={{ fontWeight: 'bold' }}> {/* Adjusted colSpan */}
+                        စုစုပေါင်း (Grand Total):
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 'bold' }}>
+                        {formatMMK(grandTotalCharge)}
+                      </TableCell>
+                      <TableCell colSpan={1}></TableCell> {/* Empty cell for Action column */}
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </div>
       )}
+      {showPrintView && (
+        // Printable Report Content - conditionally rendered
+        <div id="printable-report-content">
+          {/* Report Header Section */}
+          <h1 style={{ textAlign: 'center', fontSize: '50px', marginBottom: '10px', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>
+            {filterCarNo || 'အားလုံး'}
+          </h1>
+          <p style={{ textAlign: 'center', marginBottom: '30px', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>
+            {filterYear || 'အားလုံး'}ခုနှစ်, {monthNames.find(m => m.value === filterMonth)?.label || 'အားလုံး'}လ
+          </p>
+
+          <TableContainer component={Paper} sx={{ mt: 2 }}>
+            <Table aria-label="printable trip records table" size="small" sx={{ width: '100%', tableLayout: 'fixed' }}>
+              <TableHead>
+                <TableRow sx={{ backgroundColor: '#f0f0f0' }}>
+                  <TableCell sx={{ fontWeight: 'bold', width: '2.28%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>စဥ်</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '10.54%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>နေ့စွဲ</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '14.40%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>မှ</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '14.40%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>သို့</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '10.45%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>အခွံတင်/ချ</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '11.85%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>အသား/အခွံအိပ်</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '10.09%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>နေ့ကျော်/ပြီး</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', width: '25.99%', wordBreak: 'break-word', whiteSpace: 'normal', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>မှတ်ချက်</TableCell>
+                </TableRow>
+              </TableHead>
+
+              <TableBody>
+                {filteredTrips.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 2, fontFamily: 'Noto Sans Myanmar, sans-serif' }}>
+                      No data available for report.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredTrips.map((trip, index) => {
+                    // const combinedEmptyCharge = (trip.empty_pickup_charge || 0) + (trip.empty_dropoff_charge || 0); // Not displayed in this simplified print table
+                    const displayRemarks = `${trip.end_date || ''} ${trip.end_time || ''} ${trip.agent_name || ''} ${trip.remarks || ''}`.trim();
+
+                    return (
+                      <TableRow key={trip.id}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell>{trip.date}</TableCell>
+                        <TableCell>{trip.from_location}</TableCell>
+                        <TableCell>{trip.to_location}</TableCell>
+                        <TableCell>{trip.empty_handling_location}</TableCell>
+                        <TableCell>{trip.overnight_status === 'yes' ? 'အသားအိပ်' : ''}</TableCell>
+                        <TableCell>{trip.day_over_status === 'yes' ? 'နေ့ကျော်' : ''}</TableCell>
+                        <TableCell sx={{ wordBreak: 'break-word', whiteSpace: 'normal', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>{displayRemarks}</TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {/* Back button for print view only */}
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3, '@media print': { display: 'none' } }}>
+            <Button onClick={() => setShowPrintView(false)} variant="contained" color="secondary">
+              ပြန်ထွက်မည်
+            </Button>
+          </Box>
+        </div>
+      )} {/* End of conditional rendering for print view */}
 
       {/* Edit Trip Dialog */}
       <Dialog
@@ -1282,6 +1791,43 @@ function HomePage() {
               variant="outlined"
               size="small"
             />
+            {/* NEW: Edit Dialog - Start Time */}
+            <TextField
+              label="ခရီးစဉ် စတင်ချိန်"
+              type="time"
+              name="startTime"
+              value={editFormData.startTime}
+              onChange={handleEditChange}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              variant="outlined"
+              size="small"
+            />
+            {/* NEW: Edit Dialog - End Date */}
+            <TextField
+              label="ခရီးစဉ် ပြီးဆုံးရက်"
+              type="date"
+              name="endDate"
+              value={editFormData.endDate}
+              onChange={handleEditChange}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              variant="outlined"
+              size="small"
+            />
+            {/* NEW: Edit Dialog - End Time */}
+            <TextField
+              label="ခရီးစဉ် ပြီးဆုံးချိန်"
+              type="time"
+              name="endTime"
+              value={editFormData.endTime}
+              onChange={handleEditChange}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              variant="outlined"
+              size="small"
+            />
+
             <FormControl fullWidth variant="outlined" size="small">
               <InputLabel>ကားနံပါတ် (Car No)</InputLabel>
               <Select
@@ -1359,58 +1905,54 @@ function HomePage() {
                 ),
               }}
             />
-            {/* NEW: အခွံတင်/ချ နေရာ (Empty Handling Location) for Edit Dialog */}
-            {(portLocations.has(editFormData.from) || portLocations.has(editFormData.to)) && (
-              <FormControl fullWidth variant="outlined" size="small">
-                <InputLabel>အခွံတင်/ချ နေရာ</InputLabel>
-                <Select
-                  name="emptyHandlingLocation"
-                  value={editFormData.emptyHandlingLocation}
-                  onChange={handleEditChange}
-                  label="အခွံတင်/ချ နေရာ"
-                >
-                  <MenuItem value=""><em>ရွေးချယ်ပါ (မရှိလျှင် မရွေးပါ)</em></MenuItem>
-                  {emptyLocationsOptions.map((loc, index) => (
-                    <MenuItem key={index} value={loc}>
-                      {loc}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
 
-            {/* NEW: အခွံတင်/ချ (Empty Charge) for Edit Dialog */}
-            {(portLocations.has(editFormData.from) || portLocations.has(editFormData.to)) && (
-              <div>
-                <label htmlFor="editEmptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
-                  အခွံတင်/ချ
-                </label>
-                <TextField
-                  type="text"
-                  id="editEmptyCharge"
-                  name="emptyCharge"
-                  value={editFormData.emptyCharge || ''}
-                  onChange={(e) => {
-                    const rawValue = e.target.value.replace(/,/g, '');
-                    if (!isNaN(rawValue) || rawValue === '') {
-                      setEditFormData(prev => ({ ...prev, emptyCharge: rawValue, isManualEdited: true }));
-                    }
-                  }}
-                  fullWidth
-                  variant="outlined"
-                  size="small"
-                  InputProps={{
-                    readOnly: !editFormData.isManualEdited, // Read-only if not manually edited
-                    endAdornment: (
-                      <Typography variant="body2" color="textSecondary">
-                        {editFormData.emptyCharge && !isNaN(parseFloat(editFormData.emptyCharge)) ? formatMMK(parseFloat(editFormData.emptyCharge)) : ''}
-                      </Typography>
-                    ),
-                  }}
-                  className={!editFormData.isManualEdited ? "bg-gray-100 rounded-md" : "rounded-md"}
-                />
-              </div>
-            )}
+            <FormControl fullWidth variant="outlined" size="small">
+              <InputLabel>အခွံတင်/ချ နေရာ</InputLabel>
+              <Select
+                name="emptyHandlingLocation"
+                value={editFormData.emptyHandlingLocation}
+                onChange={handleEditChange}
+                label="အခွံတင်/ချ နေရာ"
+              >
+                <MenuItem value=""><em>ရွေးချယ်ပါ</em></MenuItem>
+                {emptyLocationsOptions.map((loc, index) => (
+                  <MenuItem key={index} value={loc}>
+                    {loc}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <div>
+              <label htmlFor="editEmptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
+                အခွံတင်/ချ
+              </label>
+              <TextField
+                type="text"
+                id="editEmptyCharge"
+                name="emptyCharge"
+                value={editFormData.emptyCharge || ''}
+                onChange={(e) => {
+                  const rawValue = e.target.value.replace(/,/g, '');
+                  if (!isNaN(rawValue) || rawValue === '') {
+                    setEditFormData(prev => ({ ...prev, emptyCharge: rawValue, isManualEdited: true }));
+                  }
+                }}
+                fullWidth
+                variant="outlined"
+                size="small"
+                InputProps={{
+                  readOnly: !editFormData.isManualEdited,
+                  endAdornment: (
+                    <Typography variant="body2" color="textSecondary">
+                      {editFormData.emptyCharge && !isNaN(parseFloat(editFormData.emptyCharge)) ? formatMMK(parseFloat(editFormData.emptyCharge)) : ''}
+                    </Typography>
+                  ),
+                }}
+                className={!editFormData.isManualEdited ? "bg-gray-100 rounded-md" : "rounded-md"}
+              />
+            </div>
+
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <FormControlLabel
@@ -1462,6 +2004,27 @@ function HomePage() {
               size="small"
               sx={{ gridColumn: '1 / -1' }}
             />
+            {/* NEW: Edit Dialog - Agent Name */}
+            <div>
+              <label htmlFor="editAgentName" className="block text-sm font-medium text-gray-700 mb-1">
+                အေးဂျင့် အမည်
+              </label>
+              <FormControl fullWidth variant="outlined" size="small">
+                <Select
+                  id="editAgentName"
+                  name="agentName"
+                  value={editFormData.agentName}
+                  onChange={handleEditChange}
+                >
+                  <MenuItem value=""><em>ရွေးချယ်ပါ</em></MenuItem>
+                  {agentNames.map((name, index) => (
+                    <MenuItem key={index} value={name}>
+                      {name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </div>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 3 }}>
             <Typography variant="h6" sx={{ mr: 2, color: 'text.primary' }}>
@@ -1513,7 +2076,7 @@ function HomePage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </div>
+    </>
   );
 }
 

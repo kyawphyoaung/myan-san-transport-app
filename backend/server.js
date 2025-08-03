@@ -30,21 +30,26 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
     // Database tables များကို ဖန်တီးပါ။
     db.serialize(() => {
-      // Trips Table (Re-added updated_at column, NEW: empty_handling_location)
+      // Trips Table
       db.run(`
         CREATE TABLE IF NOT EXISTS trips (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           date TEXT NOT NULL,
+          start_time TEXT,
+          end_date TEXT,
+          end_time TEXT,
           car_no TEXT NOT NULL,
           from_location TEXT NOT NULL,
           to_location TEXT NOT NULL,
           route_charge INTEGER,
-          empty_pickup_charge INTEGER,
-          empty_dropoff_charge INTEGER,
-          empty_handling_location TEXT, -- NEW: Column to store the selected empty handling location
+          empty_pickup_dropoff_charge INTEGER,
+          empty_handling_location TEXT,
           overnight_status TEXT,
+          overnight_charges INTEGER,
           day_over_status TEXT,
+          day_over_charges INTEGER,
           remarks TEXT,
+          agent_name TEXT, -- NEW: agent_name column
           total_charge INTEGER,
           km_travelled INTEGER,
           fuel_amount REAL DEFAULT 0,
@@ -58,35 +63,27 @@ const db = new sqlite3.Database(dbPath, (err) => {
         if (err) console.error("Error creating trips table:", err.message);
         else {
           console.log("Trips table created or already exists.");
-          // Add driver_name column if it doesn't exist (for existing databases)
+          // Add driver_name, updated_at, empty_handling_location, start_time, end_date, end_time columns if they don't exist
           db.all(`PRAGMA table_info(trips)`, (err, columns) => {
-            if (err) {
-              console.error("Error checking table info for trips:", err.message);
-              return;
-            }
-            const driverNameExists = columns.some(col => col.name === 'driver_name');
-            if (!driverNameExists) {
-              db.run(`ALTER TABLE trips ADD COLUMN driver_name TEXT DEFAULT 'N/A'`, (err) => {
-                if (err) console.error("Error adding driver_name column to trips:", err.message);
-                else console.log("Added driver_name column to trips table.");
-              });
-            }
-            // Add updated_at column if it doesn't exist (for existing databases)
-            const updatedAtExists = columns.some(col => col.name === 'updated_at');
-            if (!updatedAtExists) {
-              db.run(`ALTER TABLE trips ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`, (err) => {
-                if (err) console.error("Error adding updated_at column to trips:", err.message);
-                else console.log("Added updated_at column to trips table.");
-              });
-            }
-            // NEW: Add empty_handling_location column if it doesn't exist
-            const emptyHandlingLocationExists = columns.some(col => col.name === 'empty_handling_location');
-            if (!emptyHandlingLocationExists) {
-              db.run(`ALTER TABLE trips ADD COLUMN empty_handling_location TEXT`, (err) => {
-                if (err) console.error("Error adding empty_handling_location column to trips:", err.message);
-                else console.log("Added empty_handling_location column to trips table.");
-              });
-            }
+            if (err) { console.error("Error checking table info for trips:", err.message); return; }
+            const existingColumns = new Set(columns.map(col => col.name));
+            const newTripColumns = [
+              { name: 'driver_name', type: 'TEXT', default: "'N/A'" },
+              { name: 'updated_at', type: 'DATETIME', default: "CURRENT_TIMESTAMP" },
+              { name: 'empty_handling_location', type: 'TEXT' },
+              { name: 'start_time', type: 'TEXT' },
+              { name: 'end_date', type: 'TEXT' },
+              { name: 'end_time', type: 'TEXT' },
+              { name: 'agent_name', type: 'TEXT' } // NEW: agent_name migration
+            ];
+            newTripColumns.forEach(col => {
+              if (!existingColumns.has(col.name)) {
+                db.run(`ALTER TABLE trips ADD COLUMN ${col.name} ${col.type}${col.default ? ` DEFAULT ${col.default}` : ''}`, (alterErr) => {
+                  if (alterErr) console.error(`Error adding ${col.name} column to trips:`, alterErr.message);
+                  else console.log(`Added ${col.name} column to trips table.`);
+                });
+              }
+            });
           });
         }
       });
@@ -107,12 +104,11 @@ const db = new sqlite3.Database(dbPath, (err) => {
       });
 
       // Fuel Logs Table (for CarManagementPage - fuel fill-up records)
-      // Modified to use log_datetime instead of log_date
       db.run(`
         CREATE TABLE IF NOT EXISTS fuel_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
-          log_datetime TEXT NOT NULL, -- Changed from log_date to log_datetime
+          log_datetime TEXT NOT NULL,
           fuel_amount REAL NOT NULL,
           fuel_cost INTEGER NOT NULL,
           remarks TEXT,
@@ -124,31 +120,18 @@ const db = new sqlite3.Database(dbPath, (err) => {
           console.log("Fuel_logs table created or already exists.");
           // Migration logic: If log_date exists but log_datetime doesn't, migrate data
           db.all(`PRAGMA table_info(fuel_logs)`, async (err, columns) => {
-            if (err) {
-              console.error("Error checking table info for fuel_logs:", err.message);
-              return;
-            }
+            if (err) { console.error("Error checking table info for fuel_logs:", err.message); return; }
             const columnNames = columns.map(col => col.name);
             const hasLogDate = columnNames.includes('log_date');
             const hasLogDatetime = columnNames.includes('log_datetime');
-
             if (hasLogDate && !hasLogDatetime) {
               console.log("Migrating fuel_logs data: Adding log_datetime column and populating it.");
               try {
                 await dbRun(`ALTER TABLE fuel_logs ADD COLUMN log_datetime TEXT`);
-                // Populate log_datetime using existing log_date (assuming time is 00:00:00 if not available)
-                // For simplicity, we'll use '00:00' as default time if log_time was not present
                 await dbRun(`UPDATE fuel_logs SET log_datetime = log_date || ' 00:00' WHERE log_datetime IS NULL`);
-                // After migration, you might want to drop the old log_date column, but SQLite doesn't support it directly.
-                // It would require recreating the table, copying data, and then dropping the old one.
-                // For now, we'll leave log_date as is and ensure new operations use log_datetime.
                 console.log("Fuel_logs migration to log_datetime completed.");
-              } catch (migrateErr) {
-                console.error("Error during fuel_logs migration:", migrateErr.message);
-              }
-            } else if (hasLogDatetime) {
-              console.log("Fuel_logs table already has log_datetime.");
-            }
+              } catch (migrateErr) { console.error("Error during fuel_logs migration:", migrateErr.message); }
+            } else if (hasLogDatetime) { console.log("Fuel_logs table already has log_datetime."); }
           });
         }
       });
@@ -158,13 +141,13 @@ const db = new sqlite3.Database(dbPath, (err) => {
         CREATE TABLE IF NOT EXISTS fuel_readings (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
-          trip_id INTEGER UNIQUE, -- Each trip can have only one fuel reading
+          trip_id INTEGER UNIQUE,
           reading_date TEXT NOT NULL,
           reading_time TEXT NOT NULL,
           fuel_gauge_reading REAL NOT NULL,
-          previous_fuel_gauge_reading REAL, -- Manual or auto-calculated previous reading
-          fuel_consumed_gallons REAL,       -- Calculated
-          km_per_gallon REAL,               -- Calculated
+          previous_fuel_gauge_reading REAL,
+          fuel_consumed_gallons REAL,
+          km_per_gallon REAL,
           remarks TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL
@@ -175,18 +158,14 @@ const db = new sqlite3.Database(dbPath, (err) => {
           console.log("Fuel_readings table created or already exists.");
           // Add new columns if they don't exist (for existing databases)
           db.all(`PRAGMA table_info(fuel_readings)`, (err, columns) => {
-            if (err) {
-              console.error("Error checking table info for fuel_readings:", err.message);
-              return;
-            }
+            if (err) { console.error("Error checking table info for fuel_readings:", err.message); return; }
             const existingColumns = new Set(columns.map(col => col.name));
-            const newColumns = [
+            const newFuelReadingColumns = [
               { name: 'previous_fuel_gauge_reading', type: 'REAL' },
               { name: 'fuel_consumed_gallons', type: 'REAL' },
               { name: 'km_per_gallon', type: 'REAL' }
             ];
-
-            newColumns.forEach(col => {
+            newFuelReadingColumns.forEach(col => {
               if (!existingColumns.has(col.name)) {
                 db.run(`ALTER TABLE fuel_readings ADD COLUMN ${col.name} ${col.type}`, (alterErr) => {
                   if (alterErr) console.error(`Error adding ${col.name} column to fuel_readings:`, alterErr.message);
@@ -204,7 +183,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
         CREATE TABLE IF NOT EXISTS drivers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL UNIQUE,
-          monthly_salary INTEGER, -- This will be the *current* effective salary, updated by salary history
+          monthly_salary INTEGER,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -213,17 +192,17 @@ const db = new sqlite3.Database(dbPath, (err) => {
         else console.log("Drivers table created or already exists.");
       });
 
-      // NEW: Driver Salary History Table
+      // Driver Salary History Table
       db.run(`
         CREATE TABLE IF NOT EXISTS driver_salary_history (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           driver_id INTEGER NOT NULL,
           salary_amount INTEGER NOT NULL,
-          effective_start_date TEXT NOT NULL, -- When this salary became effective (YYYY-MM-DD)
-          effective_end_date TEXT,            -- When this salary ended (YYYY-MM-DD, null if current)
+          effective_start_date TEXT NOT NULL,
+          effective_end_date TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
-          UNIQUE (driver_id, effective_start_date) -- A driver can only have one salary start on a given date
+          UNIQUE (driver_id, effective_start_date)
         )
       `, (err) => {
         if (err) console.error("Error creating driver_salary_history table:", err.message);
@@ -246,23 +225,22 @@ const db = new sqlite3.Database(dbPath, (err) => {
           console.log("Settings table created or already exists.");
           // Default settings (only insert if not exists)
           db.run(`INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
-            ['overnight_dayover_combined_charge', '110000', 'Combined charge for overnight stay with cargo AND day over/delayed']);
+            ['overnight_dayover_combined_charge', '200000', 'Combined charge for overnight stay with cargo AND day over/delayed']);
           db.run(`INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
-            ['gep_overnight_charge', '40000', 'Overnight charge for GEP gate cars']);
+            ['gep_overnight_charge', '80000', 'Overnight charge for GEP gate cars']);
           db.run(`INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
-            ['9k_overnight_charge', '30000', 'Overnight Charge for 9K gate cars']);
+            ['9k_overnight_charge', '80000', 'Overnight Charge for 9K gate cars']);
         }
       });
 
       // Route Charges Versioning Table
-      // UPDATED: Added version_number and end_date columns. Removed UNIQUE(effective_date) if it existed.
       db.run(`
         CREATE TABLE IF NOT EXISTS route_charges_versions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          effective_date TEXT NOT NULL, -- YYYY-MM-DD format
-          end_date TEXT,                -- YYYY-MM-DD format (NULL if currently active)
-          version_number TEXT,          -- e.g., '1.0', '2.0'
-          route_data TEXT NOT NULL,     -- JSON string of the routeCharges array
+          effective_date TEXT NOT NULL,
+          end_date TEXT,
+          version_number TEXT,
+          route_data TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `, (err) => {
@@ -272,10 +250,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
           // Add new columns if they don't exist (for existing databases)
           db.all(`PRAGMA table_info(route_charges_versions)`, (err, columns) => {
-            if (err) {
-              console.error("Error checking table info for route_charges_versions:", err.message);
-              return;
-            }
+            if (err) { console.error("Error checking table info for route_charges_versions:", err.message); return; }
             const existingColumnNames = new Set(columns.map(col => col.name));
             if (!existingColumnNames.has('version_number')) {
               db.run(`ALTER TABLE route_charges_versions ADD COLUMN version_number TEXT`, (alterErr) => {
@@ -291,10 +266,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
             }
             // Check if there's any data, if not, insert initial from static JSON
             db.get(`SELECT COUNT(*) AS count FROM route_charges_versions`, [], (err, row) => {
-              if (err) {
-                console.error("Error checking route charges versions table count:", err.message);
-                return;
-              }
+              if (err) { console.error("Error checking route charges versions table count:", err.message); return; }
               if (row.count === 0) { // If table is completely empty, insert initial data
                 try {
                   const initialRouteCharges = require(path.resolve(__dirname, '../myan-san/src/data/routeCharges.json'));
@@ -304,30 +276,25 @@ const db = new sqlite3.Database(dbPath, (err) => {
                   db.run(`INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data) VALUES (?, ?, ?, ?)`,
                     [today, null, '1.0', initialRouteData], // Initial version is 1.0, active (end_date NULL)
                     function (err) {
-                      if (err) {
-                        console.error("Error inserting initial route charges version:", err.message);
-                      } else {
-                        console.log(`Initial route charges version inserted with ID: ${this.lastID} and Version: 1.0`);
-                      }
+                      if (err) { console.error("Error inserting initial route charges version:", err.message); }
+                      else { console.log(`Initial route charges version inserted with ID: ${this.lastID} and Version: 1.0`); }
                     }
                   );
-                } catch (e) {
-                  console.error("Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:", e.message);
-                }
+                } catch (e) { console.error("Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:", e.message); }
               }
             });
           });
         }
       });
 
-      // NEW: Empty Charges Versioning Table
+      // Empty Charges Versioning Table
       db.run(`
         CREATE TABLE IF NOT EXISTS empty_charges_versions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          effective_date TEXT NOT NULL,    -- YYYY-MM-DD format
-          end_date TEXT,                   -- YYYY-MM-DD format (NULL if currently active)
-          version_number TEXT,             -- e.g., '1.0', '2.0'
-          empty_charge_data TEXT NOT NULL, -- JSON string of the empty charges data
+          effective_date TEXT NOT NULL,
+          end_date TEXT,
+          version_number TEXT,
+          empty_charge_data TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `, (err) => {
@@ -337,10 +304,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
           // Add new columns if they don't exist (for existing databases)
           db.all(`PRAGMA table_info(empty_charges_versions)`, (err, columns) => {
-            if (err) {
-              console.error("Error checking table info for empty_charges_versions:", err.message);
-              return;
-            }
+            if (err) { console.error("Error checking table info for empty_charges_versions:", err.message); return; }
             const existingColumnNames = new Set(columns.map(col => col.name));
             if (!existingColumnNames.has('version_number')) {
               db.run(`ALTER TABLE empty_charges_versions ADD COLUMN version_number TEXT`, (alterErr) => {
@@ -357,16 +321,11 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
             // Initial insert of empty charges data if the table is empty
             db.get(`SELECT COUNT(*) AS count FROM empty_charges_versions`, [], (err, row) => {
-              if (err) {
-                console.error("Error checking empty charges versions table count:", err.message);
-                return;
-              }
+              if (err) { console.error("Error checking empty charges versions table count:", err.message); return; }
               if (row.count === 0) { // If table is completely empty, insert initial data
                 const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
                 const initialEmptyChargeData = JSON.stringify({
                   empty_locations_charges: [
-                    // This data should come from your "အခွံချ:ခ စျေးနှုန်း.jpg"
-                    // For now, I'm putting placeholder data. You'll need to fill this accurately.
                     { "id": 1, "location": "TKT (T Star)", "charge_40_ft": 30000 },
                     { "id": 2, "location": "DIL / ICH", "charge_40_ft": 45000 },
                     { "id": 3, "location": "ဒဂုံဆိပ်ကမ်း / RG", "charge_40_ft": 60000 },
@@ -383,7 +342,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
                   ],
                   same_direction_overrides: [
                     // Example rules based on your scenarios. You will need to define these accurately.
-                    // If a trip matches these, empty charges are 0.
                     // { "main_trip_origin": "MIP", "main_trip_destination": "တောင်ဒဂုံ", "empty_location": "DIL / ICH" },
                     // { "main_trip_origin": "သီလဝါ", "main_trip_destination": "MIP", "empty_location": "DIL / ICH" }
                     // Scenario 3 (Opposite) would NOT be in this list.
@@ -396,11 +354,8 @@ const db = new sqlite3.Database(dbPath, (err) => {
                 db.run(`INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data) VALUES (?, ?, ?, ?)`,
                   [today, null, '1.0', initialEmptyChargeData], // Initial version is 1.0, active (end_date NULL)
                   function (err) {
-                    if (err) {
-                      console.error("Error inserting initial empty charges version:", err.message);
-                    } else {
-                      console.log(`Initial empty charges version inserted with ID: ${this.lastID} and Version: 1.0`);
-                    }
+                    if (err) { console.error("Error inserting initial empty charges version:", err.message); }
+                    else { console.log(`Initial empty charges version inserted with ID: ${this.lastID} and Version: 1.0`); }
                   }
                 );
               }
@@ -411,7 +366,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
 
       // Car Driver Assignments Table
-      // UPDATED: Removed UNIQUE(car_no, assigned_date) as requested.
       db.run(`
         CREATE TABLE IF NOT EXISTS car_driver_assignments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -421,7 +375,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
           end_date TEXT, -- New column for end date of assignment (null if current)
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE
-          -- Removed UNIQUE (car_no, assigned_date)
         )
       `, (err) => {
         if (err) console.error("Error creating car_driver_assignments table:", err.message);
@@ -429,14 +382,11 @@ const db = new sqlite3.Database(dbPath, (err) => {
           console.log("Car_driver_assignments table created or already exists.");
           // Add end_date column if it doesn't exist (for existing databases)
           db.all(`PRAGMA table_info(car_driver_assignments)`, (err, columns) => {
-            if (err) {
-              console.error("Error checking table info for car_driver_assignments:", err.message);
-              return;
-            }
+            if (err) { console.error("Error checking table info for car_driver_assignments:", err.message); return; }
             const endDateExists = columns.some(col => col.name === 'end_date');
             if (!endDateExists) {
               db.run(`ALTER TABLE car_driver_assignments ADD COLUMN end_date TEXT`, (err) => {
-                if (err) console.error("Error adding end_date column to car_driver_assignments:", err.message);
+                if (err) console.error("Error adding end_date column to car_driver_assignments:", alterErr.message);
                 else console.log("Added end_date column to car_driver_assignments table.");
               });
             }
@@ -537,7 +487,8 @@ app.get('/api/trips', async (req, res) => {
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-  const validSortColumns = ['date', 'car_no', 'from_location', 'to_location', 'route_charge', 'km_travelled'];
+  // Ensure sorting by date and time correctly
+  const validSortColumns = ['date', 'start_time', 'car_no', 'from_location', 'to_location', 'route_charge', 'km_travelled'];
   const orderBy = validSortColumns.includes(sortBy) ? sortBy : 'date';
   const order = (sortOrder && (sortOrder.toLowerCase() === 'asc' || sortOrder.toLowerCase() === 'desc')) ? sortOrder.toUpperCase() : 'DESC';
 
@@ -559,54 +510,86 @@ app.get('/api/trips', async (req, res) => {
 // API endpoint to add a new trip
 app.post('/api/trips', async (req, res) => {
   let {
-    date, carNo, from_location, to_location, routeCharge,
-    empty_handling_location, // NEW: empty_handling_location from frontend
-    overnight_status, day_over_status,
-    remarks, total_charge, km_travelled, is_manual_edited, driverName
+    date, //1
+    startTime, //2
+    endDate, //3 
+    endTime, //4
+    carNo, //5
+    from_location, //6
+    to_location, //7
+    routeCharge, //8
+    empty_pickup_dropoff_charge, //9
+    empty_handling_location,//10
+    overnight_status, //11
+    overnight_charges, //12
+    day_over_status, //13
+    day_over_charges, //14
+    remarks, //15
+    agent_name, //16
+    total_charge, //17
+    km_travelled, //18
+    fuel_amount, //19
+    fuel_cost, // 20
+    is_manual_edited, //21
+    driverName, //22
   } = req.body;
 
-  if (!date || !carNo || !from_location || !to_location || !driverName) {
-    return res.status(400).json({ error: "Missing required trip fields (date, carNo, from, to, driverName)." });
+  if (!date || !startTime || !endDate || !endTime || !carNo || !from_location || !to_location || !driverName) {
+    return res.status(400).json({ error: "Missing required trip fields (date, startTime, endDate, endTime, carNo, from, to, driverName)." });
   }
 
-  let empty_pickup_charge = 0;
-  let empty_dropoff_charge = 0;
-
-  // Calculate empty charges if empty_handling_location is provided
-  if (empty_handling_location) {
-    const emptyChargeResult = await calculateEmptyCharge(from_location, to_location, empty_handling_location, date);
-    if (emptyChargeResult.type === 'pickup') {
-      empty_pickup_charge = emptyChargeResult.charge;
-    } else if (emptyChargeResult.type === 'dropoff') {
-      empty_dropoff_charge = emptyChargeResult.charge;
-    }
-    // If total_charge was not manually edited, update it to include the empty charge
-    if (!is_manual_edited) {
-      total_charge = (routeCharge || 0) + empty_pickup_charge + empty_dropoff_charge;
-    }
-  } else {
-    // If no empty_handling_location, ensure empty charges are 0
-    empty_pickup_charge = 0;
-    empty_dropoff_charge = 0;
-    if (!is_manual_edited) { // Recalculate total_charge if not manually edited
-      total_charge = (routeCharge || 0);
-    }
-  }
-
+  console.log("Car No",carNo);
+  console.log("Agent Name",agent_name);
 
   try {
     const result = await dbRun(`
       INSERT INTO trips (
-        date, car_no, from_location, to_location, route_charge,
-        empty_pickup_charge, empty_dropoff_charge, empty_handling_location, -- NEW: empty_handling_location
-        overnight_status, day_over_status,
-        remarks, total_charge, km_travelled, fuel_amount, fuel_cost, driver_name, is_manual_edited
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          date,                      -- 1: ခရီးစတင်တဲ့ရက်စွဲ (YYYY-MM-DD)
+          start_time,                -- 2: ခရီးစတင်တဲ့အချိန် (HH:MM:SS)
+          end_date,                  -- 3: ခရီးပြီးဆုံးတဲ့ရက်စွဲ (YYYY-MM-DD)
+          end_time,                  -- 4: ခရီးပြီးဆုံးတဲ့အချိန် (HH:MM:SS)
+          car_no,                    -- 5: ကားနံပါတ် (ဥပမာ: GEP-XXXX)
+          from_location,             -- 6: ခရီးစတင်တဲ့နေရာ
+          to_location,               -- 7: ခရီးပြီးဆုံးတဲ့နေရာ
+          route_charge,              -- 8: ပုံမှန်ခရီးအတွက် ဝန်ဆောင်ခ
+          empty_pickup_dropoff_charge, -- 9: အခွံတင်/ချ ဝန်ဆောင်ခ
+          empty_handling_location,   -- 10: အခွံတင်/ချ နေရာ
+          overnight_status,          -- 11: ညအိပ်ခရီးဟုတ်/မဟုတ် (yes/no)
+          overnight_charges,         -- 12: ညအိပ်ခရီးအတွက် ထပ်ဆောင်းဝန်ဆောင်ခ
+          day_over_status,           -- 13: ရက်ကျော်ခရီးဟုတ်/မဟုတ် (yes/no)
+          day_over_charges,          -- 14: ရက်ကျော်ခရီးအတွက် ထပ်ဆောင်းဝန်ဆောင်ခ
+          remarks,                   -- 15: မှတ်ချက်
+          agent_name,                -- 16: ကိုယ်စားလှယ်အမည်
+          total_charge,              -- 17: ခရီးစဉ်တစ်ခုလုံးရဲ့ စုစုပေါင်း ဝန်ဆောင်ခ
+          km_travelled,              -- 18: ခရီးအကွာအဝေး (ကီလိုမီတာ)
+          fuel_amount,               -- 19: အသုံးပြုခဲ့တဲ့ ဆီပမာဏ
+          fuel_cost,                 -- 20: အသုံးပြုခဲ့တဲ့ ဆီဖိုး
+          driver_name,               -- 21: ယာဉ်မောင်းအမည်
+          is_manual_edited           -- 22: လက်ဖြင့် ပြင်ဆင်ထားခြင်းရှိ/မရှိ (1/0)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      date, carNo, from_location, to_location, routeCharge,
-      empty_pickup_charge, empty_dropoff_charge, empty_handling_location, // NEW: empty_handling_location
-      overnight_status, day_over_status,
-      remarks, total_charge, km_travelled, 0, 0, driverName, is_manual_edited
+      date, //1
+      startTime, //2
+      endDate, //3
+      endTime, //4
+      carNo, //5
+      from_location, //6
+      to_location, //7
+      routeCharge, //8
+      empty_pickup_dropoff_charge, //9
+      empty_handling_location,//10
+      overnight_status, //11
+      overnight_charges,//12
+      day_over_status, //13
+      day_over_charges, //14
+      remarks, //15
+      agent_name, //16
+      total_charge, //17
+      km_travelled, //18
+      0, //19
+      0, //20
+      driverName, //21
+      is_manual_edited //22
     ]);
     res.status(201).json({
       message: "Trip added successfully",
@@ -622,14 +605,16 @@ app.post('/api/trips', async (req, res) => {
 app.put('/api/trips/:id', async (req, res) => {
   const { id } = req.params;
   let {
-    date, carNo, from_location, to_location, routeCharge,
-    empty_pickup_charge, empty_dropoff_charge, // These might be sent, but we'll recalculate if not manual
-    empty_handling_location, // NEW: empty_handling_location from frontend
+    date, startTime, endDate, endTime,
+    carNo, from_location, to_location, routeCharge,
+    empty_pickup_charge, empty_dropoff_charge,
+    empty_handling_location,
     overnight_status, day_over_status,
-    remarks, total_charge, km_travelled, is_manual_edited, driverName
+    remarks, agent_name, // NEW: agent_name
+    total_charge, km_travelled, is_manual_edited, driverName
   } = req.body;
 
-  if (!date || !carNo || !from_location || !to_location || !driverName) {
+  if (!date || !startTime || !endDate || !endTime || !carNo || !from_location || !to_location || !driverName) {
     return res.status(400).json({ error: "Missing required trip fields for update." });
   }
 
@@ -658,17 +643,21 @@ app.put('/api/trips/:id', async (req, res) => {
   try {
     const result = await dbRun(`
       UPDATE trips SET
-        date = ?, car_no = ?, from_location = ?, to_location = ?, route_charge = ?,
-        empty_pickup_charge = ?, empty_dropoff_charge = ?, empty_handling_location = ?, -- NEW: empty_handling_location
+        date = ?, start_time = ?, end_date = ?, end_time = ?,
+        car_no = ?, from_location = ?, to_location = ?, route_charge = ?,
+        empty_pickup_charge = ?, empty_dropoff_charge = ?, empty_handling_location = ?,
         overnight_status = ?, day_over_status = ?,
-        remarks = ?, total_charge = ?, km_travelled = ?, fuel_amount = ?, fuel_cost = ?, driver_name = ?,
+        remarks = ?, agent_name = ?, -- NEW: agent_name
+        total_charge = ?, km_travelled = ?, fuel_amount = ?, fuel_cost = ?, driver_name = ?,
         is_manual_edited = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
-      date, carNo, from_location, to_location, routeCharge,
-      empty_pickup_charge, empty_dropoff_charge, empty_handling_location, // NEW: empty_handling_location
+      date, startTime, endDate, endTime,
+      carNo, from_location, to_location, routeCharge,
+      empty_pickup_charge, empty_dropoff_charge, empty_handling_location,
       overnight_status, day_over_status,
-      remarks, total_charge, km_travelled, 0, 0, driverName, is_manual_edited, id
+      remarks, agent_name, // NEW: agent_name
+      total_charge, km_travelled, 0, 0, driverName, is_manual_edited, id
     ]);
 
     if (result.changes === 0) {
@@ -873,7 +862,6 @@ app.put('/api/route-charges-versions/:id', async (req, res) => {
   try {
     await dbRun('BEGIN TRANSACTION');
 
-    // Get the version being updated
     const existingVersion = await dbGet(`SELECT * FROM route_charges_versions WHERE id = ?`, [id]);
     if (!existingVersion) {
       await dbRun('ROLLBACK');
@@ -954,20 +942,17 @@ app.post('/api/route-charges/activate-version', async (req, res) => {
   try {
     await dbRun('BEGIN TRANSACTION');
 
-    // 1. Get the historical version data to be activated
     const historicalVersion = await dbGet(`SELECT route_data, version_number FROM route_charges_versions WHERE id = ?`, [versionIdToActivate]);
     if (!historicalVersion) {
       await dbRun('ROLLBACK');
       return res.status(404).json({ message: "Historical version not found." });
     }
 
-    // 2. Find and end any current active version
     const existingActiveVersion = await dbGet(
       `SELECT id, effective_date FROM route_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
     );
 
     if (existingActiveVersion) {
-      // Validate newEffectiveDateForActivation against existing active version's effective_date
       if (newEffectiveDateForActivation <= existingActiveVersion.effective_date) {
         await dbRun('ROLLBACK');
         return res.status(400).json({
@@ -986,12 +971,10 @@ app.post('/api/route-charges/activate-version', async (req, res) => {
       console.log(`Ended previous active version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
     }
 
-    // 3. Determine the new version number
     const maxVersionRow = await dbGet(`SELECT MAX(CAST(SUBSTR(version_number, 1, INSTR(version_number, '.') - 1) AS INTEGER)) AS max_major_version FROM route_charges_versions`);
     const maxMajorVersion = maxVersionRow && maxVersionRow.max_major_version ? maxVersionRow.max_major_version : 0;
     const newVersionNumber = `${maxMajorVersion + 1}.0`;
 
-    // 4. Insert the new active version based on the historical data
     const result = await dbRun(
       `INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data)
        VALUES (?, ?, ?, ?)`,
@@ -1096,7 +1079,7 @@ app.post('/api/empty-charges/new-version', async (req, res) => {
         `UPDATE empty_charges_versions SET end_date = ? WHERE id = ?`,
         [formattedOldEndDate, existingActiveVersion.id]
       );
-      console.log(`Ended previous empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+      console.log(`Ended previous active empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
 
       // Increment version number
       if (existingActiveVersion.version_number) {
@@ -1319,32 +1302,30 @@ async function calculateEmptyCharge(tripOrigin, tripDestination, emptyHandlingLo
       emptyChargeType = 'dropoff';
     }
     // Rule 2: Point B is a Port -> Empty Pickup (Container picked up empty, then loaded for delivery to Point B)
-    else if (portLocations.has(tripDestination)) {
-      emptyChargeType = 'pickup';
-    } else {
-      // If neither A nor B is a port, assume no empty charge logic applies for now
-      // Or, if needed, add more complex rules or require user input
-      console.log(`Neither trip origin (${tripOrigin}) nor destination (${tripDestination}) is a recognized port. No empty charge calculated.`);
-      return { charge: 0, type: 'none' };
-    }
+    // Rule 3: If emptyHandlingLocation is a port, it implies either pickup or dropoff associated with it.
+    // Re-evaluating Rule 1 and Rule 2 based on the detailed logic:
+    // User wants to calculate baseEmptyCharge and then apply same_direction_override to set it to 0 if needed.
+    // The type ('pickup'/'dropoff') is mainly for remarks.
 
-    // Find the base charge for the empty handling location
+    // A. First, determine the base empty charge from empty_locations_charges
     let baseCharge = 0;
     const locationChargeEntry = emptyLocationsCharges.find(item => item.location === emptyHandlingLocation);
     if (locationChargeEntry) {
       baseCharge = locationChargeEntry.charge_40_ft || 0; // Assuming 40' container for now
     } else {
       console.warn(`Empty handling location '${emptyHandlingLocation}' not found in empty_locations_charges. Base charge will be 0.`);
-      return { charge: 0, type: 'none' }; // Location not found in charges list
+      // If the location is not in charges list, it implies no charge
+      return { charge: 0, type: 'none' };
     }
 
-    // Check for "Same Direction" override
+    // B. Then, determine if it's 'Same Direction' based on overrides
     const isSameDirection = sameDirectionOverrides.some(rule =>
       rule.main_trip_origin === tripOrigin &&
       rule.main_trip_destination === tripDestination &&
       rule.empty_location === emptyHandlingLocation
     );
 
+    // C. Apply the 'Same Direction' rule
     if (isSameDirection) {
       emptyCharge = 0; // Same direction, no extra charge
       console.log(`Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Same Direction'. Charge is 0.`);
@@ -1352,6 +1333,17 @@ async function calculateEmptyCharge(tripOrigin, tripDestination, emptyHandlingLo
       emptyCharge = baseCharge; // Opposite direction, apply base charge
       console.log(`Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Opposite Direction'. Charge is ${baseCharge}.`);
     }
+
+    // Re-determine chargeType if needed for remarks based on final charge and ports.
+    // This is optional if type is purely for internal logic not tied to final charge value.
+    if (emptyChargeType === 'none' && emptyCharge > 0) { // If charge > 0, it must be pickup/dropoff
+      if (portLocations.has(tripOrigin)) {
+        emptyChargeType = 'dropoff';
+      } else if (portLocations.has(tripDestination)) {
+        emptyChargeType = 'pickup';
+      }
+    }
+
 
   } catch (err) {
     console.error("Error in calculateEmptyCharge:", err.message);
@@ -1787,6 +1779,7 @@ app.get('/api/fuel-readings', async (req, res) => {
          fr.km_per_gallon,               -- Directly fetch stored value
          fr.remarks,
          t.date AS trip_date,
+         t.start_time AS trip_start_time, -- NEW: Fetch trip start time
          t.from_location,
          t.to_location,
          t.km_travelled
@@ -1822,6 +1815,7 @@ app.get('/api/fuel-readings/:id', async (req, res) => {
         fr.km_per_gallon,
         fr.remarks,
         t.date AS trip_date,
+        t.start_time AS trip_start_time, -- NEW: Fetch trip start time
         t.from_location,
         t.to_location,
         t.km_travelled
@@ -2011,8 +2005,8 @@ app.get('/api/trips-by-car-month/:carNo/:year/:month', async (req, res) => {
 app.get('/api/trips/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    // Include empty_handling_location in the select statement
-    const trip = await dbGet(`SELECT *, empty_handling_location FROM trips WHERE id = ?`, [id]);
+    // Include empty_handling_location, start_time, end_date, end_time in the select statement
+    const trip = await dbGet(`SELECT *, empty_handling_location, start_time, end_date, end_time FROM trips WHERE id = ?`, [id]);
     if (trip) {
       res.json({ message: "success", data: trip });
     } else {
@@ -2146,7 +2140,6 @@ app.delete('/api/drivers/:id', async (req, res) => {
       id: id
     });
   } catch (err) {
-    console.error("Error deleting driver:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2194,14 +2187,6 @@ app.post('/api/driver-salary-history', async (req, res) => {
     // ONLY apply date validation if an existing active salary is found
     if (existingActiveSalary) {
       // Ensure new salary start date is not earlier than or equal to current active salary start date
-      console.log("Existing active salary found:", existingActiveSalary);
-      console.log("Effective start date for new salary:", existingActiveSalary.effect);
-      console.log("Type : Effective start date for new salary:", typeof existingActiveSalary.effectiveStartDate);
-
-      console.log("New effective start date:", effectiveStartDate);
-      console.log("Type of New effective start date:", typeof effectiveStartDate);
-
-
       if (effectiveStartDate <= existingActiveSalary.effective_start_date) {
         return res.status(400).json({ error: "New salary effective date must be after the current active salary's start date." });
       }
@@ -2433,6 +2418,7 @@ app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
   // Calculate end date for the month
   const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
 
+  console.log(`[car-maintenance-monthly] CarNo: ${carNo}, Year: ${year}, Month: ${month}, StartDate: ${startDate}, EndDate: ${endDate}`);
   try {
     // Find the car assigned to this driver during the specified period
     // This query tries to find an assignment that was active at any point within the month.
@@ -2505,7 +2491,6 @@ app.get('/api/car-maintenance-monthly/:carNo/:year/:month', async (req, res) => 
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
   const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
 
-  console.log(`[car-maintenance-monthly] CarNo: ${carNo}, Year: ${year}, Month: ${month}, StartDate: ${startDate}, EndDate: ${endDate}`);
   try {
     const row = await dbGet(
       'SELECT SUM(cost) AS total_cost FROM car_maintenance WHERE car_no = ? AND maintenance_date BETWEEN ? AND ?',
@@ -2540,7 +2525,7 @@ app.get('/api/car-maintenance-yearly/:carNo/:year', async (req, res) => {
 // API endpoint to get fuel costs for a specific car within a month (for CarManagementPage)
 // Modified to use log_datetime
 app.get('/api/fuel-logs-monthly/:carNo/:year/:month', async (req, res) => {
-  const { carNo, year, month } = req.params;
+  const { carNo, year } = req.params;
   const startDate = `${year}-${String(month).padStart(2, '0')}-01 00:00`; // Include time for full datetime comparison
   const endDate = `${new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0]} 23:59`; // Include time for full datetime comparison
 
@@ -2673,7 +2658,6 @@ app.get('/api/general-expenses/:carNo', async (req, res) => {
       data: rows
     });
   } catch (err) {
-    console.error("Error fetching general expenses:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
