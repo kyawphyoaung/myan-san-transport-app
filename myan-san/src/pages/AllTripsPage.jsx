@@ -7,7 +7,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   IconButton, TextField, Select, MenuItem, FormControl, InputLabel,
   Checkbox, Button, Box, Typography, Alert, CircularProgress, Dialog,
-  DialogActions, DialogContent, DialogContentText, DialogTitle, TableSortLabel
+  DialogActions, DialogContent, DialogContentText, DialogTitle, TableSortLabel,ListSubheader
 } from '@mui/material';
 import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
 import { visuallyHidden } from '@mui/utils';
@@ -17,13 +17,14 @@ import carNumbersData from '../data/carNumbers.json';
 import emptyContainerLocationsData from '../data/emptyContainerLocations.json';
 import kmData from '../data/kmData.json';
 import { formatMMK } from '../utils/currencyFormatter';
+import groupedRoutes from '../data/groupedRoutes.json';
 
 // Table Header Cells
 const headCells = [
   { id: 'id', numeric: true, disablePadding: true, label: 'No.' },
   { id: 'date', numeric: false, disablePadding: false, label: 'Date' },
   { id: 'car_no', numeric: false, disablePadding: false, label: 'Car No' },
-  { id: 'driver_name', numeric: false, disablePadding: false, label: 'ယာဉ်မောင်း' },
+  // { id: 'driver_name', numeric: false, disablePadding: false, label: 'ယာဉ်မောင်း' },
   { id: 'from_location', numeric: false, disablePadding: false, label: 'မှ (From)' },
   { id: 'to_location', numeric: false, disablePadding: false, label: 'သို့ (To)' },
   { id: 'route_charge', numeric: true, disablePadding: false, label: 'လမ်းကြောင်းခ' },
@@ -233,7 +234,6 @@ function AllTripsPage() {
     setOrderBy('date');
     applyFilters(allTrips, initialFilterState, 'date', 'asc');
     setSelectedRows(new Set());
-    setShowFilters(false); // Hide filters on reset
   };
 
   const handleSelectAllRows = (e) => {
@@ -399,8 +399,8 @@ function AllTripsPage() {
 
     let finalEmptyPickupChargeForCalculation = emptyPickupChargeVal;
     if (editFormData.emptyContainer && isSameDirection(editFormData.from, editFormData.to, editFormData.emptyContainer)) {
-        finalEmptyPickupChargeForCalculation = 0;
-        remarks += (remarks ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
+      finalEmptyPickupChargeForCalculation = 0;
+      remarks += (remarks ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
     }
 
     const totalCharge = calculateTotalCharge(
@@ -515,9 +515,18 @@ function AllTripsPage() {
   };
 
   return (
-    <div className="bg-white shadow-md rounded-lg p-6 w-full overflow-x-auto">
+    <Box
+      sx={{
+        bgcolor: 'background.paper',  // bg-white ကိုအစားထိုး
+        boxShadow: 3,                 // shadow-md ကိုအစားထိုး
+        borderRadius: 2,              // rounded-lg ကိုအစားထိုး
+        p: 3,                         // p-6 ကိုအစားထိုး (MUI spacing scale အရ 1 => 8px, 3 => 24px ဖြစ်ပါတယ်)
+        width: '100%',                // w-full ကိုအစားထိုး
+        overflowX: 'auto',            // overflow-x-auto ကိုအစားထိုး
+      }}
+    >
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <h2 className="text-2xl font-semibold text-gray-800">
+        <h2 className="text-2xl font-semibold">
           ခရီးစဉ်မှတ်တမ်းများ (အားလုံး)
         </h2>
       </Box>
@@ -573,7 +582,7 @@ function AllTripsPage() {
 
       {/* Data Filtering Inputs (Conditional rendering) */}
       {showFilters && (
-        <Paper elevation={1} sx={{ p: 3, mb: 4, bgcolor: 'grey.50' }}>
+        <Paper elevation={1} sx={{ p: 3, mb: 4}}>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: 'repeat(5, 1fr)' }, gap: 2 }}>
             <FormControl fullWidth variant="outlined" size="small">
               <InputLabel>ကားနံပါတ် ရှာဖွေရန်</InputLabel>
@@ -600,12 +609,14 @@ function AllTripsPage() {
                 onChange={handleFilterChange}
                 label="မှ (From) ရှာဖွေရန်"
               >
-                <MenuItem value="">အားလုံး</MenuItem>
-                {['အေးရှားဝေါ', 'MIP', 'သီလဝါ'].map((location, index) => (
-                  <MenuItem key={index} value={location}>
-                    {location}
-                  </MenuItem>
-                ))}
+                {Object.keys(groupedRoutes).flatMap(groupName => [
+                    <ListSubheader key={groupName}>{groupName}</ListSubheader>,
+                    ...groupedRoutes[groupName].map((route) => (
+                      <MenuItem key={route.id} value={route.route}>
+                        {route.route}
+                      </MenuItem>
+                    ))
+                  ])}
               </Select>
             </FormControl>
 
@@ -617,12 +628,14 @@ function AllTripsPage() {
                 onChange={handleFilterChange}
                 label="သို့ (To)"
               >
-                <MenuItem value="">အားလုံး</MenuItem>
-                {currentRouteCharges.map((route, index) => (
-                  <MenuItem key={index} value={route.route}>
-                    {route.route}
-                  </MenuItem>
-                ))}
+                {Object.keys(groupedRoutes).flatMap(groupName => [
+                    <ListSubheader key={groupName}>{groupName}</ListSubheader>,
+                    ...groupedRoutes[groupName].map((route) => (
+                      <MenuItem key={route.id} value={route.route}>
+                        {route.route}
+                      </MenuItem>
+                    ))
+                  ])}
               </Select>
             </FormControl>
 
@@ -683,17 +696,17 @@ function AllTripsPage() {
           <Table stickyHeader aria-label="trip records table" sx={{ width: '100%' }}>
             <TableHead>
               <TableRow sx={{ backgroundColor: '#f0f0f0' }}>
-                <TableCell padding="checkbox">
+                {/* <TableCell padding="checkbox">
                   <Checkbox
                     checked={selectedRows.size === filteredTrips.length && filteredTrips.length > 0}
                     onChange={handleSelectAllRows}
                   />
-                </TableCell>
+                </TableCell> */}
                 {headCells.map((headCell) => (
                   <TableCell
                     key={headCell.id}
-                    align={headCell.numeric ? 'right' : 'left'}
-                    padding={headCell.disablePadding ? 'none' : 'normal'}
+                    // align={headCell.numeric ? 'right' : 'left'}
+                    // padding={headCell.disablePadding ? 'none' : 'normal'}
                     sx={{ fontWeight: 'bold' }} // Removed sortDirection and onClick
                   >
                     {/* Removed TableSortLabel */}
@@ -704,31 +717,32 @@ function AllTripsPage() {
             </TableHead>
             <TableBody>
               {filteredTrips.map((trip) => {
+                const displayRemarks = `${trip.end_date || ''} ${trip.end_time || ''} ${trip.agent_name || ''} ${trip.remarks || ''}`.trim();
                 const isSelected = selectedRows.has(trip.id);
                 return (
                   <TableRow
                     key={trip.id}
                     selected={isSelected}
-                    sx={{ '&:hover': { bgcolor: '#f5f5f5' } }}
+                    sx={{ '&:hover': { bgcolor: '#17ACE8' } }}
                   >
-                    <TableCell padding="checkbox">
+                    {/* <TableCell padding="checkbox">
                       <Checkbox
                         checked={isSelected}
                         onChange={() => handleRowSelect(trip.id)}
                       />
-                    </TableCell>
+                    </TableCell> */}
                     <TableCell>{trip.id}</TableCell>
                     <TableCell>{trip.date}</TableCell>
                     <TableCell>{trip.car_no}</TableCell>
-                    <TableCell>{trip.driver_name}</TableCell>
+                    {/* <TableCell>{trip.driver_name}</TableCell> */}
                     <TableCell>{trip.from_location}</TableCell>
                     <TableCell>{trip.to_location}</TableCell>
                     <TableCell>{formatMMK(trip.route_charge)}</TableCell>
-                    <TableCell>{formatMMK(trip.empty_pickup_charge)}</TableCell>
-                    <TableCell>{formatMMK(trip.empty_dropoff_charge)}</TableCell>
-                    <TableCell>{trip.overnight_status}</TableCell>
-                    <TableCell>{trip.day_over_status}</TableCell>
-                    <TableCell>{trip.remarks}</TableCell>
+                    <TableCell>{trip.empty_handling_location}</TableCell>
+                    <TableCell>{trip.empty_pickup_dropoff_charge}</TableCell>
+                    <TableCell>{trip.overnight_status==='yes' ? 'အသားအိပ်' : ''}</TableCell>
+                    <TableCell>{trip.day_over_status==='yes' ? 'နေ့ကျော်' : ''}</TableCell>
+                    <TableCell>{displayRemarks}</TableCell>
                     <TableCell>{formatMMK(trip.total_charge)}</TableCell>
                     <TableCell>{trip.km_travelled}</TableCell>
                     <TableCell>
@@ -976,7 +990,7 @@ function AllTripsPage() {
           </Button>
         </DialogActions>
       </Dialog>
-    </div>
+    </Box>
   );
 }
 

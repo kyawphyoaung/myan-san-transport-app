@@ -17,6 +17,7 @@ import '../index.css'; // Global CSS (print styles for index.css)
 import carNumbersData from '../data/carNumbers.json';
 import kmData from '../data/kmData.json';
 import { formatMMK } from '../utils/currencyFormatter'; // Currency formatter ကို import လုပ်ပါ။
+import groupedRoutes from '../data/groupedRoutes.json';
 
 // မှ သို့ လမ်းကြောင်းခ နဲ့ပက်သက်ရင် const getRouteCharge ကို စစ်
 
@@ -122,6 +123,8 @@ function HomePage() {
   // NEW: State to control whether to show print-specific content
   const [showPrintView, setShowPrintView] = useState(false);
 
+  //For LarYar Button
+  const [buttonState, setButtonState] = useState(null);
 
   const API_BASE_URL = 'http://localhost:5001'; // Backend API base URL ကို သတ်မှတ်ပါ။
 
@@ -336,17 +339,31 @@ function HomePage() {
   // Input field များ ပြောင်းလဲသောအခါ state ကို update လုပ်ရန် function (Edit Trip Form)
   const handleEditChange = (e) => {
     const { name, value, type, checked } = e.target;
-    // Handle manual override for overnightStay and dayOverDelayed in edit form
     if (name === 'overnightStay') {
-      setIsEditOvernightStayManual(true);
-      console.log("အသားအိပ် button ချိန်းပီ Trueဖြစ်ပီ", isEditOvernightStayManual)
+      setIsOvernightStayManual(true);
     } else if (name === 'dayOverDelayed') {
-      setIsEditDayOverDelayedManual(true);
-      console.log("နေ့ကျော် button ချိန်းပီ Trueဖြစ်ပီ", isEditDayOverDelayedManual)
-
+      setIsDayOverDelayedManual(true);
+      if (checked) {
+        // overnightStay ကိုပါ true အဖြစ် auto-checked လုပ်ပါ
+        setEditFormData(prevData => ({
+          ...prevData,
+          dayOverDelayed: true,
+          overnightStay: true // <-- overnightStay ကို true လုပ်လိုက်ပါ
+        }));
+        // manual flag ကိုလည်း မှတ်ပါ
+        setIsDayOverDelayedManual(true);
+        setIsOvernightStayManual(true);
+      } else {
+        // dayOverDelayed ကို uncheck လုပ်ရင် (false ဖြစ်ရင်)
+        setFormData(prevData => ({
+          ...prevData,
+          dayOverDelayed: false,
+        }));
+        setIsDayOverDelayedManual(true);
+      }
     } else if (name === 'date' || name === 'startTime' || name === 'endDate' || name === 'endTime' || name === 'from') { // Reset manual flags when key auto-calculation fields change
-      setIsEditOvernightStayManual(false);
-      setIsEditDayOverDelayedManual(false);
+      setIsOvernightStayManual(false);
+      setIsDayOverDelayedManual(false);
     }
 
     setEditFormData(prevData => ({
@@ -444,79 +461,101 @@ function HomePage() {
   };
 
   // Helper to get route charge from routeCharges data
-const getRouteCharge = useCallback((from, to) => {
-  // Special case ကို အရင်ဆုံး စစ်ဆေးပါ။
-  if (from === 'သီလဝါ' && to === 'MIP') {
-    const sezThilawarRoute = currentRouteCharges.find(r => r.route === 'SEZ/Thilawar Zone');
-    return sezThilawarRoute ? sezThilawarRoute.MIP_AWPT_40 : 0;
-  }
-
-  // from နဲ့ to ထဲက ဘယ်ဟာက ဆိပ်ကမ်းနာမည်လဲဆိုတာကို ရှာဖွေပါ။
-  const ports = ['အေးရှားဝေါ', 'MIP', 'သီလဝါ'];
-  const tripRoute = ports.includes(from) ? to : from;
-
-  // အခုမှ tripRoute ကို အသုံးပြုပြီး မှန်ကန်တဲ့ route ကို ရှာဖွေပါ။
-  const route = currentRouteCharges.find(r => {
-    const isExactMatch = r.route === tripRoute;
-    const isPartialMatch = r.route.split(/[\/+]/).includes(tripRoute);
-    return isExactMatch || isPartialMatch;
-  });
-  console.log("ရှာဖွေရရှိသော route သည်",route)
-  if (route) {
-    // from သို့မဟုတ် to က အေးရှားဝေါ/MIP ဖြစ်ရင် MIP_AWPT_40 ကို ရွေးပါ။
-    if (from === 'အေးရှားဝေါ' || from === 'MIP' || to === 'အေးရှားဝေါ' || to === 'MIP') {
-      return route.MIP_AWPT_40;
+  const getRouteCharge = useCallback((from, to) => {
+    // Special case ကို အရင်ဆုံး စစ်ဆေးပါ။
+    if (from === 'သီလဝါ' && to === 'MIP') {
+      const sezThilawarRoute = currentRouteCharges.find(r => r.route === 'SEZ/Thilawar Zone');
+      return sezThilawarRoute ? sezThilawarRoute.MIP_AWPT_40 : 0;
     }
-    // from သို့မဟုတ် to က သီလဝါ ဖြစ်ရင် MIIT_40 ကို ရွေးပါ။
-    else if (from === 'သီလဝါ' || to === 'သီလဝါ') {
-      return route.MIIT_40;
-    }
-  }
 
-  return 0;
-}, [currentRouteCharges]);
+    // from နဲ့ to ထဲက ဘယ်ဟာက ဆိပ်ကမ်းနာမည်လဲဆိုတာကို ရှာဖွေပါ။
+    const ports = ['အေးရှားဝေါ', 'MIP', 'သီလဝါ'];
+    const tripRoute = ports.includes(from) ? to : from;
+
+    // အခုမှ tripRoute ကို အသုံးပြုပြီး မှန်ကန်တဲ့ route ကို ရှာဖွေပါ။
+    const route = currentRouteCharges.find(r => {
+      const isExactMatch = r.route === tripRoute;
+      const isPartialMatch = r.route.split(/[\/+]/).includes(tripRoute);
+      return isExactMatch || isPartialMatch;
+    });
+    // console.log("ရှာဖွေရရှိသော route သည်",route)
+    if (route) {
+      // from သို့မဟုတ် to က အေးရှားဝေါ/MIP ဖြစ်ရင် MIP_AWPT_40 ကို ရွေးပါ။
+      if (from === 'အေးရှားဝေါ' || from === 'MIP' || to === 'အေးရှားဝေါ' || to === 'MIP') {
+        return route.MIP_AWPT_40;
+      }
+      // from သို့မဟုတ် to က သီလဝါ ဖြစ်ရင် MIIT_40 ကို ရွေးပါ။
+      else if (from === 'သီလဝါ' || to === 'သီလဝါ') {
+        return route.MIIT_40;
+      }
+    }
+
+    return 0;
+  }, [currentRouteCharges]);
 
   // Frontend logic to calculate empty charges based on selected locations and active data
-  const calculateEmptyChargeFrontend = useCallback((from, to, emptyLoc, tripDate) => {
+  const calculateEmptyChargeFrontend = useCallback((from, to, emptyLoc, tripDate, buttonState) => {
+    // 1. Initial Checks and Setup
     if (!emptyChargeData || !emptyLoc) {
       return { charge: 0, type: 'none' };
     }
 
-    const { empty_locations_charges, same_direction_overrides, port_locations } = emptyChargeData;
+    const { empty_locations_charges, same_direction_charges, no_charge_routes, port_locations } = emptyChargeData;
     const portLocationsSet = new Set(port_locations);
+    let routeType = 'none';
 
-    let baseCharge = 0;
-    const locationChargeEntry = empty_locations_charges.find(item => item.location === emptyLoc);
-    if (locationChargeEntry) {
-      baseCharge = locationChargeEntry.charge_40_ft || 0;
-    } else {
-      console.warn(`Empty handling location '${emptyLoc}' not found in empty_locations_charges. Base charge will be 0.`);
-      return { charge: 0, type: 'none' };
-    }
-
-    let chargeType = 'none'; // 'pickup', 'dropoff', or 'none'
-
-    // Determine if it's an Empty Pickup or Empty Dropoff scenario based on port locations
-    // This is primarily for remarks / backend logic. Frontend just shows the combined charge.
     if (portLocationsSet.has(from)) {
-      chargeType = 'dropoff';
+      routeType = 'import'; // dropoff
     } else if (portLocationsSet.has(to)) {
-      chargeType = 'pickup';
+      routeType = 'export'; // pickup
     }
 
-    // Check for "Same Direction" override
-    const isSameDirection = same_direction_overrides.some(rule =>
+    // 2. Button State Logic (Highest Priority)
+    // User က manual override လုပ်ထားတာဖြစ်လို့ အရင်ဆုံးစစ်ရပါမယ်။
+    if (buttonState === 'same') {
+      return { charge: 0, type: 'same' };
+    } else if (buttonState === 'opposite') {
+      const oppositeDirectionCharge = empty_locations_charges.find(item => item.location === emptyLoc);
+      // Button က 'opposite' ဖြစ်နေရင်တော့ opposite charge ကိုပဲ အတင်းတွက်ပါ။
+      return { charge: oppositeDirectionCharge ? oppositeDirectionCharge.charge_40_ft : 0, type: 'opposite' };
+    }
+
+    // 3. No Charge Logic (Auto-calculation Priority 1)
+    // Check for export ports with no empty charge
+    if (routeType === "export" && (emptyLoc === "MIP" || emptyLoc === "MEC" || emptyLoc === "အေးရှားဝေါ" || emptyLoc === "အလုံ")) {
+      return { charge: 0, type: routeType };
+    }
+
+    // Check for specific no-charge routes
+    const noChargeRouteFound = no_charge_routes.some(rule =>
       rule.main_trip_origin === from &&
       rule.main_trip_destination === to &&
       rule.empty_location === emptyLoc
     );
-
-    if (isSameDirection) {
-      return { charge: 0, type: chargeType }; // Same direction, no extra charge
-    } else {
-      return { charge: baseCharge, type: chargeType }; // Opposite direction, apply base charge
+    if (noChargeRouteFound) {
+      return { charge: 0, type: routeType };
     }
-  }, [emptyChargeData]);
+
+    // 4. Same Direction Extra Charge Logic (Auto-calculation Priority 2)
+    const sameExtraDirectionCharge = same_direction_charges.find(item =>
+      item.empty_location.includes(emptyLoc) && (item.location_one === from || item.location_one === to)
+    );
+    if (sameExtraDirectionCharge) {
+      return { charge: sameExtraDirectionCharge.charge_40_ft, type: routeType };
+    }
+
+    // 5. Default Case: Opposite Direction Charge (Auto-calculation Final Priority)
+    const oppositeDirectionCharge = empty_locations_charges.find(item => item.location === emptyLoc);
+    if (oppositeDirectionCharge) {
+      return { charge: oppositeDirectionCharge.charge_40_ft, type: routeType };
+    }
+
+    // Fallback if emptyLoc is not found in any list
+    console.warn(`Empty handling location '${emptyLoc}' not found in any charge list. Defaulting to 0.`);
+    return { charge: 0, type: routeType };
+
+  }, [emptyChargeData, buttonState]);
+
 
   // Logic to auto-calculate overnightStay and dayOverDelayed based on dates and times
   const autoCalculateOvernightAndDayOver = useCallback((startDateStr, startTimeStr, endDateStr, endTimeStr, fromLocation) => {
@@ -635,7 +674,7 @@ const getRouteCharge = useCallback((from, to) => {
     const newRouteCharge = getRouteCharge(formData.from, formData.to);
     const newKmTravelled = kmData.find(k => k.start_point === formData.from && k.destination_point === formData.to)?.km_value || 0;
 
-    const emptyChargeResult = calculateEmptyChargeFrontend(formData.from, formData.to, formData.emptyHandlingLocation, formData.date);
+    const emptyChargeResult = calculateEmptyChargeFrontend(formData.from, formData.to, formData.emptyHandlingLocation, formData.date, buttonState);
     const newEmptyCharge = emptyChargeResult.charge;
 
     const { overnightStay: autoOvernight, dayOverDelayed: autoDayOver } =
@@ -671,14 +710,13 @@ const getRouteCharge = useCallback((from, to) => {
     formData.date, formData.startTime, formData.endDate, formData.endTime, // NEW Date/Time dependencies
     formData.from, formData.to, formData.emptyHandlingLocation, formData.carNo,
     formData.isManualEdited, isOvernightStayManual, isDayOverDelayedManual, // Manual flags
-    getRouteCharge, calculateEmptyChargeFrontend, autoCalculateOvernightAndDayOver, calculateTotalCharge
+    getRouteCharge, calculateEmptyChargeFrontend, autoCalculateOvernightAndDayOver, calculateTotalCharge,
+    buttonState,
   ]);
 
 
   // Effect to update edit trip form's auto-calculated fields
   useEffect(() => {
-    if (editFormData.isManualEdited) return; // Do not auto-calculate if totalCharge is manually edited
-
     const hasKeyFields = editFormData.date && editFormData.startTime && editFormData.endDate && editFormData.endTime && editFormData.from && editFormData.to && editFormData.carNo;
     if (!hasKeyFields) {
       // If key fields are missing, reset auto-calculated values to 0/false
@@ -700,37 +738,44 @@ const getRouteCharge = useCallback((from, to) => {
     const emptyChargeResult = calculateEmptyChargeFrontend(editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.date);
     const newEmptyCharge = emptyChargeResult.charge;
 
-    const { overnightStay: autoOvernight, dayOverDelayed: autoDayOver } =
-      autoCalculateOvernightAndDayOver(editFormData.date, editFormData.startTime, editFormData.endDate, editFormData.endTime, editFormData.from);
+    // Remove auto calculation logic and use the existing state
+    // const { overnightStay: autoOvernight, dayOverDelayed: autoDayOver } =
+    //   autoCalculateOvernightAndDayOver(editFormData.date, editFormData.startTime, editFormData.endDate, editFormData.endTime, editFormData.from);
 
-    // Apply auto-calculated values only if manual flags are false
-    const finalEditOvernightStay = isEditOvernightStayManual ? editFormData.overnightStay : autoOvernight;
-    const finalEditDayOverDelayed = isEditDayOverDelayedManual ? editFormData.dayOverDelayed : autoDayOver;
-
-
+    // Use the values from editFormData directly for calculation
     const newTotalCharge = calculateTotalCharge(
       newRouteCharge,
       newEmptyCharge,
-      finalEditOvernightStay, // Use final state for calculation
-      finalEditDayOverDelayed, // Use final state for calculation
+      editFormData.overnightStay,
+      editFormData.dayOverDelayed,
       editFormData.carNo
     );
+
+    console.log("newTotalCharge", newTotalCharge);
 
     setEditFormData(prevData => ({
       ...prevData,
       routeCharge: newRouteCharge,
       emptyCharge: newEmptyCharge,
       kmTravelled: newKmTravelled,
-      totalCharge: newTotalCharge,
-      // Update checkboxes only if not manually overridden
-      overnightStay: finalEditOvernightStay,
-      dayOverDelayed: finalEditDayOverDelayed,
+      totalCharge: newTotalCharge.newTotalCharge,
+      // Do not update overnightStay and dayOverDelayed here to avoid infinite loops
     }));
   }, [
-    editFormData.date, editFormData.startTime, editFormData.endDate, editFormData.endTime, // NEW Date/Time dependencies
-    editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.carNo,
-    editFormData.isManualEdited, isEditOvernightStayManual, isEditDayOverDelayedManual, // Manual flags
-    getRouteCharge, calculateEmptyChargeFrontend, autoCalculateOvernightAndDayOver, calculateTotalCharge
+    // All dependencies that can change and should trigger a re-calculation
+    editFormData.date,
+    editFormData.startTime,
+    editFormData.endDate,
+    editFormData.endTime,
+    editFormData.from,
+    editFormData.to,
+    editFormData.emptyHandlingLocation,
+    editFormData.carNo,
+    editFormData.overnightStay, // Add this dependency
+    editFormData.dayOverDelayed, // Add this dependency
+    getRouteCharge,
+    calculateEmptyChargeFrontend,
+    calculateTotalCharge,
   ]);
 
 
@@ -753,16 +798,16 @@ const getRouteCharge = useCallback((from, to) => {
     if (formData.emptyHandlingLocation) {
       const emptyChargeResult = calculateEmptyChargeFrontend(formData.from, formData.to, formData.emptyHandlingLocation, formData.date);
       // Determine if it's pickup or dropoff for backend storage
-      if (emptyChargeResult.type === 'pickup') {
+      if (emptyChargeResult.type === 'export') {
         empty_pickup_charge_for_backend = emptyChargeResult.charge;
         empty_dropoff_charge_for_backend = 0; // Ensure only one is set
-      } else if (emptyChargeResult.type === 'dropoff') {
+      } else if (emptyChargeResult.type === 'import') {
         empty_dropoff_charge_for_backend = emptyChargeResult.charge;
         empty_pickup_charge_for_backend = 0; // Ensure only one is set
       }
 
-      if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'pickup' || emptyChargeResult.type === 'dropoff')) {
-        remarks_for_backend += (remarks_for_backend ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
+      if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'export' || emptyChargeResult.type === 'import')) {
+        remarks_for_backend += (remarks_for_backend ? "; " : "");
       }
     }
 
@@ -845,6 +890,13 @@ const getRouteCharge = useCallback((from, to) => {
     setIsEditOvernightStayManual(false);
     setIsEditDayOverDelayedManual(false);
     setEditDialogOpen(true);
+
+    console.log("trip.id", trip.id);
+    console.log("trip.carNO", trip.car_no);
+    console.log("trip.remarks", trip.remarks);
+    console.log("trip.total_charge", trip.total_charge);
+    console.log("EditFormData:", editFormData);
+    console.log("edit form data. carNo:", editFormData.carNo);
   };
 
   // Handle Save Edit button click (from Dialog)
@@ -868,12 +920,12 @@ const getRouteCharge = useCallback((from, to) => {
         const emptyChargeResult = calculateEmptyChargeFrontend(editFormData.from, editFormData.to, editFormData.emptyHandlingLocation, editFormData.date);
         empty_pickup_charge_for_backend = 0;
         empty_dropoff_charge_for_backend = 0;
-        if (emptyChargeResult.type === 'pickup') {
+        if (emptyChargeResult.type === 'export') {
           empty_pickup_charge_for_backend = emptyChargeResult.charge;
-        } else if (emptyChargeResult.type === 'dropoff') {
+        } else if (emptyChargeResult.type === 'import') {
           empty_dropoff_charge_for_backend = emptyChargeResult.charge;
         }
-        if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'pickup' || emptyChargeResult.type === 'dropoff')) {
+        if (emptyChargeResult.charge === 0 && (emptyChargeResult.type === 'export' || emptyChargeResult.type === 'import')) {
           remarks_for_backend += (remarks_for_backend ? "; " : "") + "အခွံတင်/ချ - လားရာတူသောကြောင့် ဝန်ဆောင်ခ မရရှိပါ။";
         }
       } else {
@@ -1051,104 +1103,48 @@ const getRouteCharge = useCallback((from, to) => {
     return [{ value: '', label: 'အားလုံး' }, ...yearsArray];
   }, []);
 
-  const groupedRoutes = {
-    "ဆိပ်ကမ်းများ (Ports)": [
-      { "id": 1, "route": "အေးရှားဝေါ" },
-      { "id": 2, "route": "MIP" },
-      { "id": 3, "route": "သီလဝါ" }
-    ],
-    "English Routes": [
-      { "id": 4, "route": "RG" },
-      { "id": 5, "route": "RGL/KL-SPT-RGL/KL" },
-      { "id": 6, "route": "SEZ/Thilawar Zone" }
-    ],
-    "ဂ": [
-      { "id": 7, "route": "ဂန္ဒီ" }
-    ],
-    "စ": [
-      { "id": 8, "route": "စက်ဆန်း" },
-      { "id": 9, "route": "စော်ဘွားကြီးကုန်း" },
-      { "id": 10, "route": "ဆင်မလိုက်" },
-      { "id": 11, "route": "ဆားမလောက်" }
-    ],
-    "တ": [
-      { "id": 12, "route": "တိုက်ကြီး" },
-      { "id": 13, "route": "တောင်ဒဂုံ(ဇုံ ၁/၂/၃)" },
-      { "id": 14, "route": "တောင်ဥက္ကလာပ" }
-    ],
-    "ထ": [
-      { "id": 15, "route": "ထန်းတပင်" },
-      { "id": 16, "route": "ထောက်ကြန့်" }
-    ],
-    "ဒ": [
-      { "id": 17, "route": "ဒဂုံဆိပ်ကမ်း" }
-    ],
-    "န": [
-      { "id": 18, "route": "ညောင်တန်း" }
-    ],
-    "ပ": [
-      { "id": 19, "route": "ပျဥ်းမပင်" },
-      { "id": 20, "route": "ပုစွန်တောင်စျေး" },
-      { "id": 21, "route": "ပုလဲလမ်းဆုံ" },
-      { "id": 22, "route": "ပဲခူး(မြို့ရှောင်လမ်းအတွင်း)" },
-      { "id": 23, "route": "ပဲခူး(မြို့ရှောင်လမ်းအကျော်)" }
-    ],
-    "ဖ": [
-      { "id": 24, "route": "ဖော့ကန်" }
-    ],
-    "ဘ": [
-      { "id": 25, "route": "ဘုရင့်နောင်" }
-    ],
-    "ဗ": [
-      { "id": 26, "route": "ဗိုလ်တထောင်" }
-    ],
-    "မ": [
-      { "id": 27, "route": "မင်္ဂလာဒုံ" },
-      { "id": 28, "route": "မြစိမ်းရောင်" },
-      { "id": 29, "route": "မြောင်းတကာ" },
-      { "id": 30, "route": "မြောက်ဒဂုံ" },
-      { "id": 31, "route": "မြောက်ဥက္ကလာပ" },
-      { "id": 32, "route": "မှော်ဘီ" }
-    ],
-    "ရ": [
-      { "id": 33, "route": "ရွာသာကြီး" },
-      { "id": 34, "route": "ရွှေပြည်သာ" },
-      { "id": 35, "route": "ရွှေပေါက်ကံ" },
-      { "id": 36, "route": "ရွှေသန်လျင်" },
-      { "id": 37, "route": "ရွှေလင်ဗန်း" }
-    ],
-    "လ": [
-      { "id": 38, "route": "လှည်းကူး" },
-      { "id": 39, "route": "လှိုင်သာယာ(Zone-1,2,3,4)" },
-      { "id": 40, "route": "လှိုင်သာယာ(Zone-5)" },
-      { "id": 41, "route": "လှော်ကား" }
-    ],
-    "သ": [
-      { "id": 42, "route": "သာကေတ" },
-      { "id": 43, "route": "သာဓုကန်" },
-      { "id": 44, "route": "သန်လျင်" },
-      { "id": 45, "route": "သရက်ပင်ချောင်" }
-    ],
-    "ဝ": [
-      { "id": 46, "route": "ဝါးတရာ" }
-    ],
-    "အ": [
-      { "id": 47, "route": "အင်းစိန်" },
-      { "id": 48, "route": "အင်းတကော်" },
-      { "id": 49, "route": "အနော်ရထာ" },
-      { "id": 50, "route": "အနောက်ပိုင်းတက္ကသိုလ်" },
-      { "id": 51, "route": "အလုံ" },
-      { "id": 52, "route": "အောင်ဆန်း" },
-      { "id": 53, "route": "အရှေ့ဒဂုံ" }
-    ]
+  
+  //for LarYar Button
+  const handleButtonClick = () => {
+    if (buttonState === null) {
+      setButtonState('opposite');
+    } else if (buttonState === 'opposite') {
+      setButtonState('same');
+    } else if (buttonState === 'same') {
+      setButtonState(null);
+    }
   };
+
+  // Determine button properties based on the state
+  const buttonProps = {
+    text: 'လားရာ',
+    color: 'inherit', // Default color for gray
+    variant: 'outlined',
+  };
+
+  if (buttonState === 'opposite') {
+    buttonProps.text = 'လားရာဆန့်ကျင်';
+    buttonProps.color = 'error';
+    buttonProps.variant = 'contained';
+  } else if (buttonState === 'same') {
+    buttonProps.text = 'လားရာတူ';
+    buttonProps.color = 'success';
+    buttonProps.variant = 'contained';
+  }
 
   return (
     <>
       {/* Main HomePage Content - conditionally rendered */}
       {!showPrintView && (
-        <div className="bg-white shadow-md rounded-lg p-6">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+        <Box
+          sx={{
+            p: 6, // Padding
+            minHeight: '100%',
+            bgcolor: 'background.default', // ဒါက dark mode မှာ အနက်ရောင်ပြောင်းသွားပါလိမ့်မယ်
+            color: 'text.primary',
+          }}
+        >
+          <h2 className="text-2xl font-semibold mb-4">
             အချက်အလက် ထည့်သွင်းခြင်း
           </h2>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -1158,7 +1154,7 @@ const getRouteCharge = useCallback((from, to) => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             {/* ရက်စွဲ (Date) */}
             <div>
-              <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="date" className="block text-sm font-medium mb-1">
                 ရက်စွဲ (Date)
               </label>
               <TextField
@@ -1177,7 +1173,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* NEW: ခရီးစဉ် စတင်ချိန် (Start Time) */}
             <div>
-              <label htmlFor="startTime" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="startTime" className="block text-sm font-medium mb-1">
                 ခရီးစဉ် စတင်ချိန်
               </label>
               <TextField
@@ -1196,7 +1192,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* NEW: ခရီးစဉ် ပြီးဆုံးရက် (End Date) */}
             <div>
-              <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="endDate" className="block text-sm font-medium  mb-1">
                 ခရီးစဉ် ပြီးဆုံးရက်
               </label>
               <TextField
@@ -1215,7 +1211,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* NEW: ခရီးစဉ် ပြီးဆုံးချိန် (End Time) */}
             <div>
-              <label htmlFor="endTime" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="endTime" className="block text-sm font-medium  mb-1">
                 ခရီးစဉ် ပြီးဆုံးချိန်
               </label>
               <TextField
@@ -1234,7 +1230,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* ကားနံပါတ် (Car No) */}
             <div>
-              <label htmlFor="carNo" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="carNo" className="block text-sm font-medium  mb-1">
                 ကားနံပါတ် (Car No)
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1256,7 +1252,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* ယာဉ်မောင်းအမည် (Driver Name) */}
             <div>
-              <label htmlFor="driverName" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="driverName" className="block text-sm font-medium  mb-1">
                 ယာဉ်မောင်းအမည် (Driver Name)
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1278,7 +1274,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* မှ (From) */}
             <div>
-              <label htmlFor="from" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="from" className="block text-sm font-medium  mb-1">
                 မှ (From)
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1304,7 +1300,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* သို့ (To) */}
             <div>
-              <label htmlFor="to" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="to" className="block text-sm font-medium  mb-1">
                 သို့ (To)
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1330,7 +1326,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* လမ်းကြောင်းခ (Route Charge) - Display only */}
             <div>
-              <label htmlFor="routeCharge" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="routeCharge" className="block text-sm font-medium   mb-1">
                 လမ်းကြောင်းခ <span className="text-xs text-gray-500">(Auto)</span>
               </label>
               <TextField
@@ -1349,44 +1345,57 @@ const getRouteCharge = useCallback((from, to) => {
                     </Typography>
                   ),
                 }}
-                className="bg-gray-100 rounded-md"
+                className="rounded-md"
               />
             </div>
 
             {/* အခွံတင်/ချ နေရာ (Empty Handling Location) */}
 
-            <div>
-              <label htmlFor="emptyHandlingLocation" className="block text-sm font-medium text-gray-700 mb-1">
-                အခွံတင်/ချ နေရာ
-              </label>
-              <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
-                <Select
-                  id="emptyHandlingLocation"
-                  name="emptyHandlingLocation"
-                  value={formData.emptyHandlingLocation}
-                  onChange={handleChange}
-                >
-                  <MenuItem value=""><em>ရွေးချယ်ပါ (မရှိလျှင် မရွေးပါ)</em></MenuItem>
-                  {emptyLocationsOptions.map((loc, index) => (
-                    <MenuItem key={index} value={loc}>
-                      {loc}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+            <div className="flex items-end">
+              <div className="flex flex-col flex-grow">
+                <label htmlFor="emptyHandlingLocation" className="block text-sm font-medium   mb-1">
+                  အခွံတင်/ချ နေရာ
+                </label>
+
+                <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
+                  <Select
+                    id="emptyHandlingLocation"
+                    name="emptyHandlingLocation"
+                    value={formData.emptyHandlingLocation}
+                    onChange={handleChange}
+                  >
+                    <MenuItem value=""><em>ရွေးချယ်ပါ (မရှိလျှင် မရွေးပါ)</em></MenuItem>
+                    {emptyLocationsOptions.map((loc, index) => (
+                      <MenuItem key={index} value={loc}>
+                        {loc}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </div>
+              <Button
+                onClick={handleButtonClick}
+                variant={buttonProps.variant}
+                color={buttonProps.color}
+                size="small"
+                sx={{
+                  ml: 2,
+                  height:'40px',
+                  width:'120px',
+                }}
+              >
+                {buttonProps.text}
+              </Button>
             </div>
-
-
-
             <div>
-              <label htmlFor="emptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="emptyCharge" className="block text-sm font-medium mb-1">
                 အခွံတင်/ချ <span className="text-xs text-gray-500">(Auto)</span>
               </label>
               <TextField
                 type="text"
                 id="emptyCharge"
                 name="emptyCharge"
-                value={formData.emptyCharge || ''}
+                value={formData.emptyCharge || ''} // value ကို empty string အဖြစ် ပြင်လိုက်ပါ
                 fullWidth
                 variant="outlined"
                 size="small"
@@ -1398,15 +1407,16 @@ const getRouteCharge = useCallback((from, to) => {
                     </Typography>
                   ),
                 }}
-                className="bg-gray-100 rounded-md"
+                className="rounded-md"
               />
             </div>
+
 
 
             {/* Remarks (spanning all columns, adjusted to only 1 column below other elements) */}
             {/* NEW: Agent Name Field */}
             <div>
-              <label htmlFor="agentName" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="agentName" className="block text-sm font-medium   mb-1">
                 အေးဂျင့် အမည်
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1439,7 +1449,7 @@ const getRouteCharge = useCallback((from, to) => {
                   />
                 }
                 label="အသားအိပ် (Overnight Stay with Cargo)"
-                className="text-sm font-medium text-gray-700"
+                className="text-sm font-medium  "
               />
             </div>
 
@@ -1456,13 +1466,13 @@ const getRouteCharge = useCallback((from, to) => {
                   />
                 }
                 label="နေ့ကျော်/ပြီး (Day Over/Delayed)"
-                className="text-sm font-medium text-gray-700"
+                className="text-sm font-medium  "
               />
             </div>
 
             {/* Remarks - Span remaining columns */}
             <div className="col-span-full"> {/* Changed to col-span-full to ensure it always spans */}
-              <label htmlFor="remarks" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="remarks" className="block text-sm font-medium   mb-1">
                 မှတ်ချက် (Remarks)
               </label>
               <TextField
@@ -1538,10 +1548,10 @@ const getRouteCharge = useCallback((from, to) => {
           </Box>
 
           {/* Year, Month, and Car No Filters for HomePage Table */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg shadow-inner">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 rounded-lg shadow-inner">
             {/* နှစ် (Year) Filter */}
             <div>
-              <label htmlFor="filterYear" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="filterYear" className="block text-sm font-medium   mb-1">
                 နှစ် (Year)
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1563,7 +1573,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* လ (Month) Filter */}
             <div>
-              <label htmlFor="filterMonth" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="filterMonth" className="block text-sm font-medium   mb-1">
                 လ (Month)
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1585,7 +1595,7 @@ const getRouteCharge = useCallback((from, to) => {
 
             {/* ကားနံပါတ် (Car No) Filter */}
             <div>
-              <label htmlFor="filterCarNo" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="filterCarNo" className="block text-sm font-medium   mb-1">
                 ကားနံပါတ် (Car No)
               </label>
               <FormControl fullWidth variant="outlined" size="small" className="rounded-md">
@@ -1624,16 +1634,16 @@ const getRouteCharge = useCallback((from, to) => {
                       />
                     </TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>No.</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>နေ့စွဲ</TableCell> 
-                    <TableCell sx={{ fontWeight: 'bold' }}>ကားနံပါတ်</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>နေ့စွဲ</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>ကားနံပါတ်</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>မှ (From)</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>သို့ (To)</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>လမ်းကြောင်းခ</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ</TableCell> 
-                    <TableCell sx={{ fontWeight: 'bold' }}>အသား/အခွံအိပ်</TableCell> 
-                    <TableCell sx={{ fontWeight: 'bold' }}>နေ့ကျော်/ပြီး</TableCell> 
-                    <TableCell sx={{ fontWeight: 'bold' }}>မှတ်ချက်</TableCell> 
-                    <TableCell sx={{ fontWeight: 'bold' }}>စုစုပေါင်း</TableCell> 
+                    <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>အသား/အခွံအိပ်</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>နေ့ကျော်/ပြီး</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>မှတ်ချက်</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>စုစုပေါင်း</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Action</TableCell>
                   </TableRow>
                 </TableHead>
@@ -1654,7 +1664,7 @@ const getRouteCharge = useCallback((from, to) => {
                         <TableRow
                           key={trip.id}
                           selected={isSelected}
-                          sx={{ '&:hover': { bgcolor: '#f5f5f5' } }}
+                          sx={{ '&:hover': '' }}
                         >
                           <TableCell padding="checkbox">
                             <Checkbox
@@ -1662,17 +1672,17 @@ const getRouteCharge = useCallback((from, to) => {
                               onChange={() => handleRowSelect(trip.id)}
                             />
                           </TableCell>
-                          <TableCell>{index + 1}</TableCell> 
-                          <TableCell>{trip.date}</TableCell> 
+                          <TableCell>{index + 1}</TableCell>
+                          <TableCell>{trip.date}</TableCell>
                           <TableCell>{trip.car_no}</TableCell>
-                          <TableCell>{trip.from_location}</TableCell> 
-                          <TableCell>{trip.to_location}</TableCell> 
+                          <TableCell>{trip.from_location}</TableCell>
+                          <TableCell>{trip.to_location}</TableCell>
                           <TableCell>{formatMMK(trip.route_charge)}</TableCell>
-                          <TableCell>{formatMMK(trip.empty_pickup_dropoff_charge)}</TableCell> 
-                          <TableCell>{trip.overnight_status === 'yes' ? 'အသားအိပ်' : ''}</TableCell> 
-                          <TableCell>{trip.day_over_status === 'yes' ? 'နေ့ကျော်' : ''}</TableCell> 
-                          <TableCell>{displayRemarks}</TableCell> 
-                          <TableCell>{formatMMK(trip.total_charge)}</TableCell> 
+                          <TableCell>{formatMMK(trip.empty_pickup_dropoff_charge)}</TableCell>
+                          <TableCell>{trip.overnight_status === 'yes' ? 'အသားအိပ်' : ''}</TableCell>
+                          <TableCell>{trip.day_over_status === 'yes' ? 'နေ့ကျော်' : ''}</TableCell>
+                          <TableCell>{displayRemarks}</TableCell>
+                          <TableCell>{formatMMK(trip.total_charge)}</TableCell>
                           <TableCell>
                             <Box sx={{ display: 'flex', gap: 0.5 }}>
                               <IconButton color="info" size="small" onClick={() => handleEdit(trip)}>
@@ -1689,7 +1699,7 @@ const getRouteCharge = useCallback((from, to) => {
                   )}
                   {/* Grand Total Row */}
                   {filteredTrips.length > 0 && (
-                    <TableRow sx={{ backgroundColor: '#e0e0e0', fontWeight: 'bold', borderTop: '2px solid #ccc' }}>
+                    <TableRow sx={{ fontWeight: 'bold', borderTop: '2px solid #ccc' }}>
                       <TableCell colSpan={11} align="right" sx={{ fontWeight: 'bold' }}> {/* Adjusted colSpan */}
                         စုစုပေါင်း (Grand Total):
                       </TableCell>
@@ -1703,24 +1713,60 @@ const getRouteCharge = useCallback((from, to) => {
               </Table>
             </TableContainer>
           )}
-        </div>
+        </Box>
       )}
       {showPrintView && (
         // Printable Report Content - conditionally rendered
-        <div id="printable-report-content">
+        <Box id="printable-report-content"
+          sx={{
+            '@media print': {
+              // ပင်မ content ရဲ့ အရောင်ကို အမည်းရောင်ထားပါ
+              color: 'black',
+              backgroundColor: 'white',
+
+              // Table Container ကိုပါ ဘောင်အမည်းရောင်ဖြစ်အောင် သတ်မှတ်ခြင်း
+              '& .MuiTableContainer-root': {
+                border: '1px solid black !important',
+              },
+
+              // Table ထဲက ခေါင်းစဉ်ရော၊ data ရော အရောင်မည်းအောင် သတ်မှတ်ခြင်း
+              '& .MuiTableCell-root': {
+                color: 'black !important',
+                borderColor: 'black !important',
+              },
+
+              // Table Head ကို background အဖြူရောင်ထားခြင်း
+              '& .MuiTableHead-root .MuiTableRow-root': {
+                backgroundColor: '#f0f0f0 !important',
+              },
+            },
+          }}
+        >
           {/* Report Header Section */}
           <h1 style={{ textAlign: 'center', fontSize: '50px', marginBottom: '10px', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>
             {filterCarNo || 'အားလုံး'}
           </h1>
           <p style={{ textAlign: 'center', marginBottom: '30px', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>
-            {filterYear || 'အားလုံး'}ခုနှစ်, {monthNames.find(m => m.value === filterMonth)?.label || 'အားလုံး'}လ
+            {monthNames.find(m => m.value === filterMonth)?.label || 'အားလုံး'} လပိုင်း {filterYear || 'အားလုံး'}ခုနှစ်
           </p>
 
           <TableContainer component={Paper} sx={{ mt: 2 }}>
             <Table aria-label="printable trip records table" size="small" sx={{ width: '100%', tableLayout: 'fixed' }}>
               <TableHead>
-                <TableRow sx={{ backgroundColor: '#f0f0f0' }}>
-                  <TableCell sx={{ fontWeight: 'bold', width: '2.28%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>စဥ်</TableCell>
+                <TableRow>
+                  <TableCell
+                    sx={{
+                      fontWeight: 'bold',
+                      width: '2.28%',
+                      fontFamily: 'Noto Sans Myanmar, sans-serif',
+                      // Print ထုတ်တဲ့အခါမှသာ သီးသန့်သက်ရောက်မည့် style
+                      '@media print': { // padding အားလုံးကို အတင်းအကျဖယ်ရှားပါ
+                        textAlign: 'left !important', // စာသားကို ဘယ်ဘက်အစွန်းမှာ ကပ်ပါ
+                        paddingLeft: '0.2rem !important', // ဘယ်ဘက် padding ကိုလည်း အသေအချာဖယ်ပါ
+                      },
+                    }}
+                  // ဒီမှာ align prop ကိုထပ်ထည့်စရာမလိုတော့ပါဘူး
+                  >စဥ်</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', width: '10.54%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>နေ့စွဲ</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', width: '14.40%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>မှ</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', width: '14.40%', fontFamily: 'Noto Sans Myanmar, sans-serif' }}>သို့</TableCell>
@@ -1766,7 +1812,7 @@ const getRouteCharge = useCallback((from, to) => {
               ပြန်ထွက်မည်
             </Button>
           </Box>
-        </div>
+        </Box>
       )} {/* End of conditional rendering for print view */}
 
       {/* Edit Trip Dialog */}
@@ -1864,12 +1910,14 @@ const getRouteCharge = useCallback((from, to) => {
                 onChange={handleEditChange}
                 label="မှ (From)"
               >
-                <MenuItem value="">နေရာ ရွေးပါ</MenuItem>
-                {['အေးရှားဝေါ', 'MIP', 'သီလဝါ'].map((location, index) => (
-                  <MenuItem key={index} value={location}>
-                    {location}
-                  </MenuItem>
-                ))}
+                {Object.keys(groupedRoutes).flatMap(groupName => [
+                  <ListSubheader key={groupName}>{groupName}</ListSubheader>,
+                  ...groupedRoutes[groupName].map((route) => (
+                    <MenuItem key={route.id} value={route.route}>
+                      {route.route}
+                    </MenuItem>
+                  ))
+                ])}
               </Select>
             </FormControl>
             <FormControl fullWidth variant="outlined" size="small">
@@ -1880,12 +1928,14 @@ const getRouteCharge = useCallback((from, to) => {
                 onChange={handleEditChange}
                 label="သို့ (To)"
               >
-                <MenuItem value="">ခရီးစဉ် ရွေးပါ</MenuItem>
-                {currentRouteCharges.map((route, index) => (
-                  <MenuItem key={index} value={route.route}>
-                    {route.route}
-                  </MenuItem>
-                ))}
+                {Object.keys(groupedRoutes).flatMap(groupName => [
+                  <ListSubheader key={groupName}>{groupName}</ListSubheader>,
+                  ...groupedRoutes[groupName].map((route) => (
+                    <MenuItem key={route.id} value={route.route}>
+                      {route.route}
+                    </MenuItem>
+                  ))
+                ])}
               </Select>
             </FormControl>
             <TextField
@@ -1924,10 +1974,12 @@ const getRouteCharge = useCallback((from, to) => {
             </FormControl>
 
             <div>
-              <label htmlFor="editEmptyCharge" className="block text-sm font-medium text-gray-700 mb-1">
+              {/* <label htmlFor="editEmptyCharge" className="block text-sm font-medium mb-1">
                 အခွံတင်/ချ
-              </label>
+              </label> */}
+              {/* <InputLabel>အခွံတင်/ချ ခ</InputLabel> */}
               <TextField
+                label="အခွံတင်/ချ ခ"
                 type="text"
                 id="editEmptyCharge"
                 name="emptyCharge"
@@ -1944,16 +1996,25 @@ const getRouteCharge = useCallback((from, to) => {
                 InputProps={{
                   readOnly: !editFormData.isManualEdited,
                   endAdornment: (
-                    <Typography variant="body2" color="textSecondary">
+                    <Typography variant="body2" color="textPrimary">
                       {editFormData.emptyCharge && !isNaN(parseFloat(editFormData.emptyCharge)) ? formatMMK(parseFloat(editFormData.emptyCharge)) : ''}
                     </Typography>
                   ),
                 }}
-                className={!editFormData.isManualEdited ? "bg-gray-100 rounded-md" : "rounded-md"}
+                className={!editFormData.isManualEdited ? "rounded-md" : "rounded-md"}
               />
             </div>
 
-
+            <TextField
+              label="KM (ခရီးအကွာအဝေး)"
+              type="number"
+              name="kmTravelled"
+              value={editFormData.kmTravelled || ''}
+              fullWidth
+              variant="outlined"
+              size="small"
+              InputProps={{ readOnly: true }}
+            />
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <FormControlLabel
                 control={
@@ -1965,7 +2026,7 @@ const getRouteCharge = useCallback((from, to) => {
                   />
                 }
                 label="အသားအိပ် (Overnight Stay)"
-                className="text-sm font-medium text-gray-700"
+                className="text-sm font-medium  "
               />
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -1979,19 +2040,9 @@ const getRouteCharge = useCallback((from, to) => {
                   />
                 }
                 label="နေ့ကျော်/ပြီး (Day Over)"
-                className="text-sm font-medium text-gray-700"
+                className="text-sm font-medium  "
               />
             </Box>
-            <TextField
-              label="KM (ခရီးအကွာအဝေး)"
-              type="number"
-              name="kmTravelled"
-              value={editFormData.kmTravelled || ''}
-              fullWidth
-              variant="outlined"
-              size="small"
-              InputProps={{ readOnly: true }}
-            />
             <TextField
               label="မှတ်ချက် (Remarks)"
               name="remarks"
@@ -2006,7 +2057,7 @@ const getRouteCharge = useCallback((from, to) => {
             />
             {/* NEW: Edit Dialog - Agent Name */}
             <div>
-              <label htmlFor="editAgentName" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="editAgentName" className="block text-sm font-medium   mb-1">
                 အေးဂျင့် အမည်
               </label>
               <FormControl fullWidth variant="outlined" size="small">
@@ -2030,7 +2081,7 @@ const getRouteCharge = useCallback((from, to) => {
             <Typography variant="h6" sx={{ mr: 2, color: 'text.primary' }}>
               စုစုပေါင်း: {formatMMK(editFormData.totalCharge)}
             </Typography>
-            <FormControlLabel
+            {/* <FormControlLabel
               control={
                 <Checkbox
                   checked={editFormData.isManualEdited}
@@ -2041,7 +2092,7 @@ const getRouteCharge = useCallback((from, to) => {
               }
               label="စုစုပေါင်းကျသင့်ငွေကို ကိုယ်တိုင်ပြင်မည်"
               sx={{ mr: 2 }}
-            />
+            /> */}
           </Box>
         </DialogContent>
         <DialogActions>

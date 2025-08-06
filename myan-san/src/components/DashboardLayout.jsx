@@ -9,16 +9,25 @@ import {
   ListAlt as ListAltIcon,
   LocalGasStation as LocalGasStationIcon,
   Settings as SettingsIcon,
-  AttachMoney as AttachMoneyIcon, // Route Charges Management အတွက် Icon
-  MonetizationOn as MonetizationOnIcon // Empty Charge Management အတွက် Icon
+  AttachMoney as AttachMoneyIcon,
+  MonetizationOn as MonetizationOnIcon
 } from '@mui/icons-material';
-import { IconButton, Typography } from '@mui/material'; // IconButton နှင့် Typography ကို ထည့်သွင်းပါ။
+import { IconButton, Typography, Box, useTheme } from '@mui/material';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
+
+// AppProvider ကနေ useContext ကို ရယူဖို့ useApp ကို import လုပ်ပါ
+import { useApp } from './AppProvider';
 
 function DashboardLayout({ currentPage, setCurrentPage, children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const sidebarRef = useRef(null);
   const toggleButtonRef = useRef(null);
   let sidebarCloseTimer = useRef(null);
+
+  // useApp hook ကို အသုံးပြုပြီး mode နဲ့ setMode function ကို ရယူပါ
+  const { mode, setMode } = useApp();
+  const theme = useTheme();
 
   // Page titles and their corresponding icons
   const pageInfo = {
@@ -27,8 +36,8 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
     driverManagement: { title: 'ယာဉ်မောင်း စီမံခန့်ခွဲမှု', icon: <GroupIcon sx={{ mr: 1 }} /> },
     allTrips: { title: 'မှတ်တမ်းများ', icon: <ListAltIcon sx={{ mr: 1 }} /> },
     fuelConsumption: { title: 'ဆီစားနှုန်း', icon: <LocalGasStationIcon sx={{ mr: 1 }} /> },
-    routeChargesManagement: { title: 'လမ်းကြောင်းခ စီမံခန့်ခွဲမှု', icon: <AttachMoneyIcon sx={{ mr: 1 }} /> }, // လမ်းကြောင်းခ စီမံခန့်ခွဲမှု
-    emptyChargeManagement: { title: 'အခွံချ/တင် နှုန်းထား စီမံခန့်ခွဲမှု', icon: <MonetizationOnIcon sx={{ mr: 1 }} /> }, // အခွံချ/တင် နှုန်းထား စီမံခန့်ခွဲမှု
+    routeChargesManagement: { title: 'လမ်းကြောင်းခ စီမံခန့်ခွဲမှု', icon: <AttachMoneyIcon sx={{ mr: 1 }} /> },
+    emptyChargeManagement: { title: 'အခွံချ/တင် နှုန်းထား စီမံခန့်ခွဲမှု', icon: <MonetizationOnIcon sx={{ mr: 1 }} /> },
     settings: { title: 'ချိန်ညှိမှုများ', icon: <SettingsIcon sx={{ mr: 1 }} /> },
   };
 
@@ -42,7 +51,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
     setSidebarOpen(true);
   };
 
-  // Sidebar ပေါ်ကနေ mouse ဖယ်လိုက်ရင် timer စပါ
   const handleMouseLeaveSidebar = () => {
     sidebarCloseTimer.current = setTimeout(() => {
       setSidebarOpen(false);
@@ -51,7 +59,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
 
   const handleMouseEnterSidebar = () => {
     clearTimeout(sidebarCloseTimer.current);
- };
+  };
 
   const handleClickCloseButton = () => {
     setSidebarOpen(false);
@@ -60,8 +68,12 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
 
   const headerHeight = '64px';
   const sidebarWidth = '256px';
+
   return (
-    <div className="flex min-h-screen bg-gray-100 font-inter relative">
+    <div
+      className={`flex min-h-screen font-inter relative ${mode === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
+        }`}
+    >
       {/* Fixed Top Header (အပြာရောင် ဘားတန်း) */}
       <header
         className="fixed top-0 left-0 w-full h-16 bg-blue-800 text-white shadow-lg flex items-center px-4 z-30"
@@ -74,10 +86,18 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
         >
           {sidebarOpen ? <CloseIcon /> : <MenuIcon />}
         </button>
-        <h1 className="text-xl font-semibold text-white flex items-center">
+        <h1 className="text-xl font-semibold text-white flex items-center flex-1">
           {pageInfo[currentPage]?.icon}
           {pageInfo[currentPage]?.title}
         </h1>
+
+        {/* Theme ကို ပြောင်းဖို့ ခလုတ် */}
+        <IconButton
+          sx={{ ml: 1, color: 'white' }}
+          onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}
+        >
+          {theme.palette.mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+        </IconButton>
       </header>
 
       {/* Sidebar */}
@@ -93,9 +113,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('home')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'home' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'home' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <HomeIcon sx={{ mr: 2 }} />
                 {pageInfo.home.title}
@@ -104,9 +122,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('carManagement')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'carManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'carManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <DirectionsCarIcon sx={{ mr: 2 }} />
                 {pageInfo.carManagement.title}
@@ -115,9 +131,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('driverManagement')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'driverManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'driverManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <GroupIcon sx={{ mr: 2 }} />
                 {pageInfo.driverManagement.title}
@@ -126,9 +140,7 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('allTrips')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'allTrips' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'allTrips' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <ListAltIcon sx={{ mr: 2 }} />
                 {pageInfo.allTrips.title}
@@ -137,45 +149,34 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('fuelConsumption')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'fuelConsumption' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'fuelConsumption' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <LocalGasStationIcon sx={{ mr: 2 }} />
                 {pageInfo.fuelConsumption.title}
               </button>
             </li>
-            {/* Route Charges Management Page navigation link */}
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('routeChargesManagement')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'routeChargesManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'routeChargesManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <AttachMoneyIcon sx={{ mr: 2 }} />
                 {pageInfo.routeChargesManagement.title}
               </button>
             </li>
-            {/* NEW: Empty Charge Management Page navigation link */}
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('emptyChargeManagement')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'emptyChargeManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'emptyChargeManagement' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <MonetizationOnIcon sx={{ mr: 2 }} />
                 {pageInfo.emptyChargeManagement.title}
               </button>
             </li>
-            {/* Settings Page navigation link */}
             <li className="mb-2">
               <button
                 onClick={() => handlePageChange('settings')}
-                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${
-                  currentPage === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'
-                }`}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
               >
                 <SettingsIcon sx={{ mr: 2 }} />
                 {pageInfo.settings.title}
@@ -190,8 +191,8 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out pt-16`} /* pt-16 သည် Header အမြင့်အတွက် */
-        style={{ marginLeft: sidebarOpen ? sidebarWidth : '0px' }} /* Sidebar ၏ width အလိုက် Main content ၏ left margin ကို ချိန်ညှိပါပြီ။ */
+        className={`flex-1 flex flex-col transition-all duration-300 ease-in-out pt-16`}
+        style={{ marginLeft: sidebarOpen ? sidebarWidth : '0px' }}
       >
         {/* Page Content */}
         <main className="flex-1 p-6 overflow-y-auto">

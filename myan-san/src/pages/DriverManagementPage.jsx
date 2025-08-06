@@ -699,7 +699,7 @@ function DriverManagementPage() {
                     <TableContainer component={Paper}>
                         <Table>
                             <TableHead>
-                                <TableRow sx={{ backgroundColor: '#e0e0e0' }}>
+                                <TableRow sx={{ backgroundColor: '#8c55ff' }}>
                                     <TableCell sx={{ fontWeight: 'bold' }}>ယာဉ်မောင်း</TableCell>
                                     <TableCell sx={{ fontWeight: 'bold' }}>ကားနံပါတ်</TableCell>
                                     <TableCell sx={{ fontWeight: 'bold' }}>လ</TableCell> {/* New Month Column */}
@@ -967,7 +967,7 @@ function DriverManagementPage() {
                         <TableContainer component={Paper}>
                             <Table>
                                 <TableHead>
-                                    <TableRow sx={{ backgroundColor: '#e0e0e0' }}>
+                                    <TableRow sx={{ backgroundColor: '#8c55ff' }}>
                                         <TableCell sx={{ fontWeight: 'bold' }}>ယာဉ်မောင်းအမည်</TableCell>
                                         <TableCell sx={{ fontWeight: 'bold' }}>တာဝန်စတင်ရက်</TableCell>
                                         <TableCell sx={{ fontWeight: 'bold' }}>တာဝန်ပြီးဆုံးရက်</TableCell>
@@ -1023,7 +1023,7 @@ function DriverManagementPage() {
                         <TableContainer component={Paper}>
                             <Table>
                                 <TableHead>
-                                    <TableRow sx={{ backgroundColor: '#e0e0e0' }}>
+                                    <TableRow sx={{ backgroundColor: '#8c55ff' }}>
                                         <TableCell sx={{ fontWeight: 'bold' }}>လစာပမာဏ</TableCell>
                                         <TableCell sx={{ fontWeight: 'bold' }}>စတင်သက်ရောက်သည့်ရက်</TableCell>
                                         <TableCell sx={{ fontWeight: 'bold' }}>သက်တမ်းကုန်ဆုံးသည့်ရက်</TableCell>

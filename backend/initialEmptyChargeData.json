@@ -1,0 +1,60 @@
+{
+    "empty_locations_charges": [
+    { "id": 1, "location": "TKT (5Star)", "charge_40_ft": 45000 },
+    { "id": 2, "location": "DIL", "charge_40_ft": 60000 },
+    { "id": 3, "location": "ICH", "charge_40_ft": 60000 },
+    { "id": 4, "location": "ရွာသာကြီး", "charge_40_ft": 100000 },
+    { "id": 5, "location": "RG", "charge_40_ft": 100000 },
+    { "id": 6, "location": "သီလဝါ(MITT)", "charge_40_ft": 150000 },
+    { "id": 7, "location": "MIP", "charge_40_ft": 0 },
+    { "id": 8, "location": "MEC", "charge_40_ft": 30000 },
+    { "id": 9, "location": "အေးရှားဝေါ", "charge_40_ft": 30000 },
+    { "id": 10, "location": "SML", "charge_40_ft": 45000 },
+    { "id": 11, "location": "HTY(HICD/EverGreen)", "charge_40_ft": 70000 },
+    { "id": 12, "location": "AZL", "charge_40_ft": 70000 },
+    { "id": 13, "location": "ဖော့ကန်(HLA)", "charge_40_ft": 85000 },
+    { "id": 14, "location": "HTY(MYCO မုတ္တမ)", "charge_40_ft": 100000 },
+    { "id": 15, "location": "HTY(ရွှေလင်ဗန်း)", "charge_40_ft": 100000 },
+    { "id": 16, "location": "ICD2", "charge_40_ft": 0 },
+    { "id": 16, "location": "ICD1", "charge_40_ft": 0 },
+    { "id": 16, "location": "အလုံ", "charge_40_ft": 0 },
+    { "id": 16, "location": "FRC", "charge_40_ft": 0 }
+    ],
+    "same_direction_charges": [
+    {"id": 1, "location_one": "ရွှေပြည်သာ","empty_location": "လှိုင်သာယာ","charge_40_ft":45000},
+    {"id": 2, "location": "သာဓုကန်","empty_location": "လှိုင်သာယာ", "charge_40_ft":45000},
+    {"id": 3, "location": "ပျဥ်းမပင်","empty_location": "လှိုင်သာယာ", "charge_40_ft":45000},
+    {"id": 4, "location": "မင်္ဂလာဒုံ","empty_location": "လှိုင်သာယာ", "charge_40_ft":45000},
+    {"id": 5, "location": "မှော်ဘီ","empty_location": "လှိုင်သာယာ", "charge_40_ft":45000},
+    {"id": 6, "location": "ဝါးတရာ","empty_location": "လှိုင်သာယာ", "charge_40_ft":45000},
+    {"id": 7, "location": "တောင်ဒဂုံ","empty_location": "ရွာသာကြီး/RG", "charge_40_ft":45000},
+    {"id": 8, "location": "မြောက်ဒဂုံ","empty_location": "ရွာသာကြီး/RG", "charge_40_ft":45000},
+    {"id": 9, "location": "ဒဂုံဆိပ်ကမ်း","empty_location": "ရွာသာကြီး/RG", "charge_40_ft":45000},
+    {"id": 10, "location": "MITT","empty_location": "ရွာသာကြီး/RG", "charge_40_ft":45000},
+    {"id": 11, "location": "MITTလှိုင်သာယာ(Zone-1,2,3,4)","empty_location": "HTY(MYCO မုတ္တမ)/ဖော့ကန်(HLA)", "charge_40_ft":45000},
+    {"id": 12, "location": "ရွှေသံလွင်","empty_location": "HTY(MYCO မုတ္တမ/ဖော့ကန်(HLA)", "charge_40_ft":45000},
+    {"id": 13, "location": "အနော်ရထာ","empty_location": "HTY(MYCO မုတ္တမ)/ဖော့ကန်(HLA)", "charge_40_ft":45000},
+    {"id": 14, "location": "မြစိမ်းရောင်","empty_location": "HTY(MYCO မုတ္တမ)/ဖော့ကန်(HLA)", "charge_40_ft":45000}
+    ],  
+    "no_charge_routes": [
+    { "main_trip_origin": "ရွှေလင်ဗန်း", "main_trip_destination": "အေးရှားဝေါ", "empty_location": "HTY(ရွှေလင်ဗန်း)" },
+    { "main_trip_origin": "ငွေပင်လယ်", "main_trip_destination": "အေးရှားဝေါ", "empty_location": "ICD2" },
+    { "main_trip_origin": "အေးရှားဝေါ", "main_trip_destination": "ရွှေလင်ဗန်း", "empty_location": "ICD2" },
+    { "main_trip_origin": "သီလဝါ", "main_trip_destination": "ပဲခူး", "empty_location": "TKT (5Star)" },
+    { "main_trip_origin": "သီလဝါ", "main_trip_destination": "အနော်ရထာ", "empty_location": "HTY(ရွှေလင်ဗန်း)"},
+    { "main_trip_origin": "ဒဂုံဆိပ်ကမ်း", "main_trip_destination": "သီလဝါ", "empty_location": "DIL"},
+    { "main_trip_origin": "သီလဝါ", "main_trip_destination": "ရွှေလင်ဗန်း", "empty_location": "HTY(ရွှေလင်ဗန်း)"},
+    { "main_trip_origin": "ရွှေလင်ဗန်း", "main_trip_destination": "အေးရှားဝေါ", "empty_location": "ICD2"},
+    { "main_trip_origin": "အေးရှားဝေါ", "main_trip_destination": "လေးထောင့်ကန်", "empty_location": "ICD2"},
+    { "main_trip_origin": "MIP", "main_trip_destination": "သာဓုကန်", "empty_location": "MIP"},
+    { "main_trip_origin": "အေးရှားဝေါ", "main_trip_destination": "ဒဂုံဆိပ်ကမ်း", "empty_location": "ICD2"},
+    { "main_trip_origin": "အေးရှားဝေါ", "main_trip_destination": "ဒဂုံဆိပ်ကမ်း", "empty_location": "DIL"},
+    { "main_trip_origin": "MIP", "main_trip_destination": "ပဲခူး", "empty_location": "ဖော့ကန်(HLA)"},
+    { "main_trip_origin": "ဗိုလ်တထောင်", "main_trip_destination": "အေးရှားဝေါ", "empty_location": "ICD2"},
+    { "main_trip_origin": "အေးရှားဝေါ", "main_trip_destination": "အရှေ့ဒဂုံ", "empty_location": "ICH"},
+    { "main_trip_origin": "MIP", "main_trip_destination": "ပဲခူး", "empty_location": "MIP"}
+    ],
+    "port_locations": [ 
+    "အေးရှားဝေါ","MIP","သီလဝါ"
+    ]
+    }

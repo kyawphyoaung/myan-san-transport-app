@@ -52,5 +52,5 @@ export const formatMMK = (amount) => {
   }
 
 
-  return sign + parts.join(' '); // Join with space for readability "4 သောင်း 5 ထောင်"
+  return sign + parts.join('\u00A0'); // Join with space for readability "4 သောင်း 5 ထောင်"
 };

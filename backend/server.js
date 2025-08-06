@@ -7,6 +7,7 @@ const fs = require('fs'); // For reading static JSON file if needed, though we'l
 
 const app = express();
 const PORT = 5001; // သင်ပြောင်းလဲထားသော Port နံပါတ်ကို သေချာစစ်ဆေးပါ။
+const initialEmptyChargeData = require('./initialEmptyChargeData.json'); 
 
 // Middleware
 app.use(cors());
@@ -324,35 +325,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
               if (err) { console.error("Error checking empty charges versions table count:", err.message); return; }
               if (row.count === 0) { // If table is completely empty, insert initial data
                 const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-                const initialEmptyChargeData = JSON.stringify({
-                  empty_locations_charges: [
-                    { "id": 1, "location": "TKT (T Star)", "charge_40_ft": 30000 },
-                    { "id": 2, "location": "DIL / ICH", "charge_40_ft": 45000 },
-                    { "id": 3, "location": "ဒဂုံဆိပ်ကမ်း / RG", "charge_40_ft": 60000 },
-                    { "id": 4, "location": "TLW (MITT)", "charge_40_ft": 150000 },
-                    { "id": 5, "location": "MIP / MEC / Asia World", "charge_40_ft": 30000 },
-                    { "id": 6, "location": "SML", "charge_40_ft": 45000 },
-                    { "id": 7, "location": "HTY (HICD / EverGreen)", "charge_40_ft": 70000 },
-                    { "id": 8, "location": "ကုမ္ပဏီ (HLA)", "charge_40_ft": 85000 },
-                    { "id": 9, "location": "HTY (MYCO / ပုဂ္ဂလိကစက်မှု)", "charge_40_ft": 100000 },
-                    { "id": 10, "location": "လှိုင်သာယာ စက်မှုဇုန် ပတ်ပတ်လည်၊ ရွှေပြည်သာ", "charge_40_ft": 45000 },
-                    { "id": 11, "location": "MITT (SEZ)", "charge_40_ft": 80000 },
-                    { "id": 12, "location": "ဗိုလ်တထောင် (၁/၂/၃) ရပ်ကွက်အတွင်း၊ ရွှေပြည်သာ", "charge_40_ft": 45000 },
-                    { "id": 13, "location": "ဗိုလ်တထောင် (၁/၂/၃) ရပ်ကွက်အတွင်း၊ လှိုင်သာယာ", "charge_40_ft": 45000 }
-                  ],
-                  same_direction_overrides: [
-                    // Example rules based on your scenarios. You will need to define these accurately.
-                    // { "main_trip_origin": "MIP", "main_trip_destination": "တောင်ဒဂုံ", "empty_location": "DIL / ICH" },
-                    // { "main_trip_origin": "သီလဝါ", "main_trip_destination": "MIP", "empty_location": "DIL / ICH" }
-                    // Scenario 3 (Opposite) would NOT be in this list.
-                  ],
-                  port_locations: [ // List of locations considered "Ports" for logic
-                    "MIP", "AWPT", "MIIT", "သီလဝါ", "RGL", "KL", "BWT", "SML", "MEC", "Asia World", "TMH", "MITT" // Add all relevant port names
-                  ]
-                });
+                const emptyChargeDataString = JSON.stringify(initialEmptyChargeData); 
 
                 db.run(`INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data) VALUES (?, ?, ?, ?)`,
-                  [today, null, '1.0', initialEmptyChargeData], // Initial version is 1.0, active (end_date NULL)
+                  [today, null, '1.0', emptyChargeDataString], // Initial version is 1.0, active (end_date NULL)
                   function (err) {
                     if (err) { console.error("Error inserting initial empty charges version:", err.message); }
                     else { console.log(`Initial empty charges version inserted with ID: ${this.lastID} and Version: 1.0`); }
