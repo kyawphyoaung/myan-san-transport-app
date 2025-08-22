@@ -1,5 +1,5 @@
 // myan-san/src/pages/CarManagementPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { formatMMK } from '../utils/currencyFormatter';
 import carNumbersData from '../data/carNumbers.json'; // carNumbers.json ကို import လုပ်ပါ။
 import {
@@ -10,13 +10,10 @@ import {
   Edit as EditIcon, Delete as DeleteIcon,
   FilterList as FilterListIcon, Sort as SortIcon,
   ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
-  ArrowUpward as ArrowUpwardIcon, ArrowDownward as ArrowDownwardIcon,
-  Search as SearchIcon, // Import SearchIcon (will be replaced by ResetIcon conceptually)
+  ArrowUpward as ArrowUpwardIcon, ArrowDownward as ArrowDownwardIcon, // Import SearchIcon (will be replaced by ResetIcon conceptually)
   Refresh as RefreshIcon // Import RefreshIcon for Reset button
 } from '@mui/icons-material';
-import { format } from 'date-fns';
 import { useApp } from '../components/AppProvider';
-import { useTheme } from '@emotion/react';
 
 function CarManagementPage() {
   const { mode } = useApp();
@@ -179,7 +176,7 @@ function CarManagementPage() {
     };
 
     fetchAndCombineCarNumbers();
-  }, []); // Run once on component mount
+  }, [selectedCarNo]); // Run once on component mount
 
   // Selected Car No, Filter, and Sort options ပြောင်းလဲသောအခါ သက်ဆိုင်ရာ records များကို fetch လုပ်ခြင်း
   // This useEffect will now be triggered by filterTrigger or selectedCarNo/activeTab changes
@@ -995,11 +992,11 @@ function CarManagementPage() {
                   <>
                     <h1 className="text-white">Sorting စီရန် :</h1>
                     <Button onClick={() => handleSort('maintenance_date')} endIcon={sortColumn === 'maintenance_date' && (sortDirection === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />)}
-                    sx={{ color: 'white' }} >
-                      ရက်စွဲ 
+                      sx={{ color: 'white' }} >
+                      ရက်စွဲ
                     </Button>
                     <Button onClick={() => handleSort('cost')} endIcon={sortColumn === 'cost' && (sortDirection === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />)}
-                    sx={{ color: 'white' }} >
+                      sx={{ color: 'white' }} >
                       ကုန်ကျစရိတ်
                     </Button>
                   </>
@@ -1087,20 +1084,20 @@ function CarManagementPage() {
                       ကုန်ကျစရိတ် (Cost)
                     </label>
                     <div className="flex items-center">
-                    <input
-                      type="text"
-                      id="cost"
-                      name="cost"
-                      value={maintenanceData.cost.toLocaleString('en-US')}
-                      onChange={handleMaintenanceChange}
-                      className="mt-1 text-gray-900 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
-                      placeholder="ဥပမာ: 50,000"
-                    />
-                    {maintenanceData.cost && !isNaN(parseFloat(maintenanceData.cost.replace(/,/g, ''))) && (
-                      <p className="text-xs text-gray-900 ml-4 mr-4 whitespace-nowrap">
-                        {formatMMK(parseFloat(maintenanceData.cost.replace(/,/g, '')))}
-                      </p>
-                    )}
+                      <input
+                        type="text"
+                        id="cost"
+                        name="cost"
+                        value={maintenanceData.cost.toLocaleString('en-US')}
+                        onChange={handleMaintenanceChange}
+                        className="mt-1 text-gray-900 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                        placeholder="ဥပမာ: 50,000"
+                      />
+                      {maintenanceData.cost && !isNaN(parseFloat(maintenanceData.cost.replace(/,/g, ''))) && (
+                        <p className="text-xs text-gray-900 ml-4 mr-4 whitespace-nowrap">
+                          {formatMMK(parseFloat(maintenanceData.cost.replace(/,/g, '')))}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -1119,7 +1116,7 @@ function CarManagementPage() {
                     overflowX: 'auto', // overflow-x-auto ကိုအစားထိုးပါ
                     mb: 4,             // mb-8 ကိုအစားထိုးပါ (MUI spacing scale 4 က 32px ဖြစ်ပါတယ်)
                   }}
-                  >
+                >
                   <table className="min-w-full border rounded-lg shadow-sm">
                     <thead>
                       <tr className="border-b border-gray-200">
@@ -1223,20 +1220,20 @@ function CarManagementPage() {
                       ဆီကုန်ကျငွေ
                     </label>
                     <div className="flex items-center">
-                    <input
-                      type="text"
-                      id="fuelCost"
-                      name="fuelCost"
-                      value={fuelLogData.fuelCost.toLocaleString('en-US')}
-                      onChange={handleFuelLogChange}
-                      className="mt-1 block w-full rounded-md text-gray-800 border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
-                      placeholder="ဥပမာ: 50,000"
-                    />
-                    {fuelLogData.fuelCost && !isNaN(parseFloat(fuelLogData.fuelCost.replace(/,/g, ''))) && (
-                      <p className="text-xs text-gray-500 ml-5 mr-5 whitespace-nowrap">
-                        {formatMMK(parseFloat(fuelLogData.fuelCost.replace(/,/g, '')))}
-                      </p>
-                    )}
+                      <input
+                        type="text"
+                        id="fuelCost"
+                        name="fuelCost"
+                        value={fuelLogData.fuelCost.toLocaleString('en-US')}
+                        onChange={handleFuelLogChange}
+                        className="mt-1 block w-full rounded-md text-gray-800 border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                        placeholder="ဥပမာ: 50,000"
+                      />
+                      {fuelLogData.fuelCost && !isNaN(parseFloat(fuelLogData.fuelCost.replace(/,/g, ''))) && (
+                        <p className="text-xs text-gray-500 ml-5 mr-5 whitespace-nowrap">
+                          {formatMMK(parseFloat(fuelLogData.fuelCost.replace(/,/g, '')))}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -1268,16 +1265,16 @@ function CarManagementPage() {
                   sx={{
                     overflowX: 'auto', // overflow-x-auto ကိုအစားထိုးပါ
                   }}
-                  >
+                >
                   <table className="min-w-full  border border-gray-200 rounded-lg shadow-sm">
                     <thead>
                       <tr className="border-b border-gray-200">
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'}  uppercase tracking-wider">No.</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider">ရက်စွဲ/အချိန်</th> {/* Changed header */}
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider">ဆီပမာဏ</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider">ဆီကုန်ကျငွေ</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider">မှတ်ချက်</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider">လုပ်ဆောင်ချက်</th> {/* Action column */}
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider`}>No.</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider`}>ရက်စွဲ/အချိန်</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider`}>ဆီပမာဏ</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider`}>ဆီကုန်ကျငွေ</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider`}>မှတ်ချက်</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-300' : 'text-gray-300'} uppercase tracking-wider`}>လုပ်ဆောင်ချက်</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1290,12 +1287,12 @@ function CarManagementPage() {
                       ) : (
                         fuelLogs.map((log, index) => (
                           <tr key={log.id} className="border-b border-gray-200 hover:bg-my-purple-800">
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100'}">{index + 1}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100'}">{log.log_datetime}</td> {/* Changed to log_datetime */}
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100'}">{log.fuel_amount.toLocaleString()}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100'}">{log.fuel_cost.toLocaleString()}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100'}">{log.remarks}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100'}">
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : ''}`}>{index + 1}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : ''}`}>{log.log_datetime}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : ''}`}>{log.fuel_amount.toLocaleString()}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : ''}`}>{log.fuel_cost.toLocaleString()}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : ''}`}>{log.remarks}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : ''}`}>
                               <IconButton aria-label="edit" size="small" onClick={() => handleEditFuelLogClick(log)}>
                                 <EditIcon fontSize="small" color="primary" />
                               </IconButton>
@@ -1308,10 +1305,10 @@ function CarManagementPage() {
                       )}
                       {/* Grand Total Row for Fuel Logs */}
                       <tr className="font-bold border-t-2 border-gray-300">
-                        <td colSpan="3" className="px-4 py-2 text-right text-sm ${mode==='dark' ? 'text-gray-400' : 'text-gray-900}">
+                        <td colSpan="3" className={`px-4 py-2 text-right text-sm ${mode === 'dark' ? 'text-gray-400' : 'text-gray-900'}`}>
                           စုစုပေါင်း ဆီကုန်ကျငွေ (Grand Total):
                         </td>
-                        <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-400' : 'text-gray-900}">
+                        <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-400' : 'text-gray-900'}`}>
                           {fuelGrandTotal.toLocaleString()} ({formatMMK(fuelGrandTotal)})
                         </td>
                         <td></td> {/* Empty cell for remarks column */}
@@ -1378,20 +1375,20 @@ function CarManagementPage() {
                       ကုန်ကျစရိတ် (Cost)
                     </label>
                     <div className="flex items-center">
-                    <input
-                      type="text"
-                      id="generalCost"
-                      name="cost"
-                      value={generalExpenseData.cost.toLocaleString('en-US')}
-                      onChange={handleGeneralExpenseChange}
-                      className="mt-1 block w-full rounded-md text-gray-800 border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
-                      placeholder="ဥပမာ: 15,000"
-                    />
-                    {generalExpenseData.cost && !isNaN(parseFloat(generalExpenseData.cost.replace(/,/g, ''))) && (
-                      <p className="text-xs text-gray-500 ml-4 mr-4 whitespace-nowrap">
-                        {formatMMK(parseFloat(generalExpenseData.cost.replace(/,/g, '')))}
-                      </p>
-                    )}
+                      <input
+                        type="text"
+                        id="generalCost"
+                        name="cost"
+                        value={generalExpenseData.cost.toLocaleString('en-US')}
+                        onChange={handleGeneralExpenseChange}
+                        className="mt-1 block w-full rounded-md text-gray-800 border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                        placeholder="ဥပမာ: 15,000"
+                      />
+                      {generalExpenseData.cost && !isNaN(parseFloat(generalExpenseData.cost.replace(/,/g, ''))) && (
+                        <p className="text-xs text-gray-500 ml-4 mr-4 whitespace-nowrap">
+                          {formatMMK(parseFloat(generalExpenseData.cost.replace(/,/g, '')))}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -1423,12 +1420,12 @@ function CarManagementPage() {
                   <table className="min-w-full border border-gray-200 rounded-lg shadow-sm">
                     <thead>
                       <tr className="border-b border-gray-200">
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'} uppercase tracking-wider">No.</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'} uppercase tracking-wider">ရက်စွဲ</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'} uppercase tracking-wider">ဖော်ပြချက်</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'} uppercase tracking-wider">ကုန်ကျစရိတ်</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'} uppercase tracking-wider">မှတ်ချက်</th>
-                        <th className="px-4 py-2 text-left text-xs font-semibold ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'} uppercase tracking-wider">လုပ်ဆောင်ချက်</th> {/* Action column */}
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'} uppercase tracking-wider`}>No.</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'} uppercase tracking-wider`}>ရက်စွဲ</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'} uppercase tracking-wider`}>ဖော်ပြချက်</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'} uppercase tracking-wider`}>ကုန်ကျစရိတ်</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'} uppercase tracking-wider`}>မှတ်ချက်</th>
+                        <th className={`px-4 py-2 text-left text-xs font-semibold ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'} uppercase tracking-wider`}>လုပ်ဆောင်ချက်</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1441,12 +1438,12 @@ function CarManagementPage() {
                       ) : (
                         generalExpenses.map((expense, index) => (
                           <tr key={expense.id} className="border-b border-gray-200 hover:bg-my-purple-800">
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">{index + 1}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">{expense.expense_date}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">{expense.description}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">{expense.cost.toLocaleString()}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">{expense.remarks}</td>
-                            <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'}`}>{index + 1}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'}`}>{expense.expense_date}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'}`}>{expense.description}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'}`}>{expense.cost.toLocaleString()}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'}`}>{expense.remarks}</td>
+                            <td className={`px-4 py-2 text-sm ${mode === 'dark' ? 'text-gray-100' : 'text-gray-600'}`}>
                               <IconButton aria-label="edit" size="small" onClick={() => handleEditGeneralExpenseClick(expense)}>
                                 <EditIcon fontSize="small" color="primary" />
                               </IconButton>
@@ -1459,10 +1456,10 @@ function CarManagementPage() {
                       )}
                       {/* Grand Total Row for General Expenses */}
                       <tr className="font-bold border-t-2 border-gray-300">
-                        <td colSpan="4" className="px-4 py-2 text-right text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">
+                        <td colSpan="4" className={`px-4 py-2 text-right text-sm ${mode==='dark' ? 'text-gray-100' : 'text-gray-600'}`}>
                           စုစုပေါင်း အထွေထွေအသုံးစာရိတ် (Grand Total):
                         </td>
-                        <td className="px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100 : 'text-gray-600'}">
+                        <td className={`px-4 py-2 text-sm ${mode==='dark' ? 'text-gray-100' : 'text-gray-600'}`}>
                           {generalExpenseGrandTotal.toLocaleString()} ({formatMMK(generalExpenseGrandTotal)})
                         </td>
                         <td></td> {/* Empty cell for remarks column */}

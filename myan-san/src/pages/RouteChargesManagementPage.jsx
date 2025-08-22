@@ -1,15 +1,14 @@
 // myan-san/src/pages/RouteChargesManagementPage.jsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
     Container, Typography, Box, Button, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, Paper, IconButton, Dialog,
-    DialogActions, DialogContent, DialogContentText, DialogTitle,
+    DialogActions, DialogContent, DialogTitle,
     TextField, Alert, CircularProgress, Collapse, Divider
 } from '@mui/material';
 import {
-    Edit as EditIcon, Add as AddIcon, History as HistoryIcon,
-    ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
+    Edit as EditIcon, Add as AddIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
     CheckCircleOutline as CheckCircleOutlineIcon,
     InfoOutlined as InfoOutlinedIcon
 } from '@mui/icons-material';
@@ -143,7 +142,7 @@ function RouteChargesManagementPage() {
                 endDate: editEndDate === '' ? null : editEndDate, // Send null if empty string
             };
             const response = await axios.put(`${API_BASE_URL}/route-charges-versions/${editingVersion.id}`, payload);
-            setSuccessMessage("ရက်စွဲများ ပြင်ဆင်ပြီးပါပြီ။");
+            setSuccessMessage("ရက်စွဲများ ပြင်ဆင်ပြီးပါပြီ။ :",response);
             handleCloseEditDatesDialog();
             fetchRouteCharges(); // Refresh data
         } catch (err) {

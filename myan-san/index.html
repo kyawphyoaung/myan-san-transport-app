@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <title>Function Test Runner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f9;
+        }
+        #results-container {
+            max-width: 900px;
+            margin: auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #runButton {
+            display: block;
+            margin: 10px auto;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        .test-result {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .test-result.pass {
+            color: #28a745;
+        }
+        .test-result.fail {
+            color: #dc3545;
+        }
+        .fail-details {
+            margin-left: 20px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        .summary {
+            margin-top: 20px;
+            font-weight: bold;
+            text-align: center;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div id="results-container">
+        <h1>Function Test Results</h1>
+        <button id="runButton">Run Tests</button>
+        <div id="output"></div>
+        <div id="summary"></div>
+    </div>
+    
+    <script type="module" src="src/utils/test.js"></script>
+</body>
+</html>

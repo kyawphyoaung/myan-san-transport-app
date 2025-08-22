@@ -1,4 +1,3 @@
-// myan-san/src/pages/EmptyChargeManagementPage.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import {
@@ -11,11 +10,44 @@ import {
     Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, History as HistoryIcon,
     CheckCircleOutline as CheckCircleOutlineIcon, InfoOutlined as InfoOutlinedIcon,
     ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
-    ContentCopy as ContentCopyIcon, Save as SaveIcon, Cancel as CancelIcon
+    ContentCopy as ContentCopyIcon, Save as SaveIcon, Cancel as CancelIcon,
+    DragIndicator as DragIndicatorIcon
 } from '@mui/icons-material';
-import { formatMMK } from '../utils/currencyFormatter'; // Import formatMMK
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    verticalListSortingStrategy,
+    useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { formatMMK } from '../utils/currencyFormatter';
 
 const API_BASE_URL = 'http://localhost:5001/api';
+
+// Drag-and-drop အတွက် Custom Component များ
+const SortableRow = ({ item, children, ...props }) => {
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: item.id });
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+    };
+    return (
+        <TableRow ref={setNodeRef} style={style} {...attributes}>
+            <TableCell sx={{ cursor: 'grab' }} {...listeners}>
+                <DragIndicatorIcon fontSize="small" />
+            </TableCell>
+            {children}
+        </TableRow>
+    );
+};
 
 function EmptyChargeManagementPage() {
     const [activeEmptyCharges, setActiveEmptyCharges] = useState(null);
@@ -27,15 +59,16 @@ function EmptyChargeManagementPage() {
     // State for New Version Dialog
     const [newVersionDialogOpen, setNewVersionDialogOpen] = useState(false);
     const [newVersionEffectiveDate, setNewVersionEffectiveDate] = useState('');
-    const [newEmptyLocations, setNewEmptyLocations] = useState([]); // Array of { location: '', charge_40_ft: 0 }
-    const [newSameDirectionOverrides, setNewSameDirectionOverrides] = useState([]); // Array of { main_trip_origin: '', main_trip_destination: '', empty_location: '' }
-    const [newPortLocations, setNewPortLocations] = useState(''); // Comma-separated string
+    const [newEmptyLocations, setNewEmptyLocations] = useState([]);
+    const [newSameDirectionOverrides, setNewSameDirectionOverrides] = useState([]);
+    const [newNoChargeRoutes, setNewNoChargeRoutes] = useState([]);
+    const [newPortLocations, setNewPortLocations] = useState('');
 
     // State for Edit Version Dates Dialog
     const [editDatesDialogOpen, setEditDatesDialogOpen] = useState(false);
     const [editingVersionId, setEditingVersionId] = useState(null);
     const [editEffectiveDate, setEditEffectiveDate] = useState('');
-    const [editEndDate, setEditEndDate] = useState(''); // Can be null
+    const [editEndDate, setEditEndDate] = useState('');
 
     // State for Activate Version Dialog
     const [activateDialogOpen, setActivateDialogOpen] = useState(false);
@@ -49,10 +82,16 @@ function EmptyChargeManagementPage() {
 
     // State for View Details Dialog
     const [viewDetailsDialogOpen, setViewDetailsDialogOpen] = useState(false);
-    const [viewingVersionDetails, setViewingVersionDetails] = useState(null);
+    const [viewingVersionDetails, setViewingVersionDetails] = useState([]);
 
     // State for filter collapse
     const [showFilters, setShowFilters] = useState(false);
+
+    // Dnd-kit sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor)
+    );
 
     // Fetch active empty charges
     const fetchActiveEmptyCharges = useCallback(async () => {
@@ -87,15 +126,30 @@ function EmptyChargeManagementPage() {
 
     // Handle opening New Version Dialog
     const handleOpenNewVersionDialog = (copyActive = false) => {
-        setNewVersionEffectiveDate(new Date().toISOString().split('T')[0]); // Default to today
+        setNewVersionEffectiveDate(new Date().toISOString().split('T')[0]);
         if (copyActive && activeEmptyCharges && activeEmptyCharges.emptyCharges) {
             // Deep copy existing data
-            setNewEmptyLocations(JSON.parse(JSON.stringify(activeEmptyCharges.emptyCharges.empty_locations_charges || [])));
-            setNewSameDirectionOverrides(JSON.parse(JSON.stringify(activeEmptyCharges.emptyCharges.same_direction_overrides || [])));
+            const emptyLocationsWithIds = (activeEmptyCharges.emptyCharges.empty_locations_charges || []).map(item => ({
+                ...item,
+                id: item.id || Math.random().toString(36).substring(2, 9)
+            }));
+            const sameDirectionOverridesWithIds = (activeEmptyCharges.emptyCharges.same_direction_overrides || []).map(item => ({
+                ...item,
+                id: item.id || Math.random().toString(36).substring(2, 9)
+            }));
+            const noChargeRoutesWithIds = (activeEmptyCharges.emptyCharges.no_charge_routes || []).map(item => ({
+                ...item,
+                id: item.id || Math.random().toString(36).substring(2, 9)
+            }));
+
+            setNewEmptyLocations(emptyLocationsWithIds);
+            setNewSameDirectionOverrides(sameDirectionOverridesWithIds);
+            setNewNoChargeRoutes(noChargeRoutesWithIds);
             setNewPortLocations((activeEmptyCharges.emptyCharges.port_locations || []).join(', '));
         } else {
-            setNewEmptyLocations([]);
-            setNewSameDirectionOverrides([]);
+            setNewEmptyLocations([{ id: Math.random().toString(36).substring(2, 9), location: '', charge_40_ft: 0 }]);
+            setNewSameDirectionOverrides([{ id: Math.random().toString(36).substring(2, 9), main_trip_origin: '', main_trip_destination: '', empty_location: '' }]);
+            setNewNoChargeRoutes([{ id: Math.random().toString(36).substring(2, 9), origin: '', destination: '' }]);
             setNewPortLocations('');
         }
         setNewVersionDialogOpen(true);
@@ -109,43 +163,79 @@ function EmptyChargeManagementPage() {
         setNewVersionEffectiveDate('');
         setNewEmptyLocations([]);
         setNewSameDirectionOverrides([]);
+        setNewNoChargeRoutes([]);
         setNewPortLocations('');
     };
 
-    // Handle adding a new empty location row in the form
+    // --- Empty Locations Handlers ---
     const handleAddEmptyLocation = () => {
-        setNewEmptyLocations([...newEmptyLocations, { location: '', charge_40_ft: 0 }]);
+        setNewEmptyLocations([...newEmptyLocations, { id: Math.random().toString(36).substring(2, 9), location: '', charge_40_ft: 0 }]);
     };
-
-    // Handle updating an empty location row in the form
-    const handleUpdateEmptyLocation = (index, field, value) => {
-        const updated = [...newEmptyLocations];
-        updated[index][field] = field === 'charge_40_ft' ? (parseFloat(value) || 0) : value;
+    const handleUpdateEmptyLocation = (id, field, value) => {
+        const updated = newEmptyLocations.map(item => item.id === id ? { ...item, [field]: field === 'charge_40_ft' ? (parseFloat(value) || 0) : value } : item);
+        setNewEmptyLocations(updated);
+    };
+    const handleRemoveEmptyLocation = (id) => {
+        const updated = newEmptyLocations.filter(item => item.id !== id);
         setNewEmptyLocations(updated);
     };
 
-    // Handle removing an empty location row in the form
-    const handleRemoveEmptyLocation = (index) => {
-        const updated = newEmptyLocations.filter((_, i) => i !== index);
-        setNewEmptyLocations(updated);
-    };
-
-    // Handle adding a new same direction override row in the form
+    // --- Same Direction Overrides Handlers ---
     const handleAddSameDirectionOverride = () => {
-        setNewSameDirectionOverrides([...newSameDirectionOverrides, { main_trip_origin: '', main_trip_destination: '', empty_location: '' }]);
+        setNewSameDirectionOverrides([...newSameDirectionOverrides, { id: Math.random().toString(36).substring(2, 9), main_trip_origin: '', main_trip_destination: '', empty_location: '' }]);
     };
-
-    // Handle updating a same direction override row in the form
-    const handleUpdateSameDirectionOverride = (index, field, value) => {
-        const updated = [...newSameDirectionOverrides];
-        updated[index][field] = value;
+    const handleUpdateSameDirectionOverride = (id, field, value) => {
+        const updated = newSameDirectionOverrides.map(item => item.id === id ? { ...item, [field]: value } : item);
+        setNewSameDirectionOverrides(updated);
+    };
+    const handleRemoveSameDirectionOverride = (id) => {
+        const updated = newSameDirectionOverrides.filter(item => item.id !== id);
         setNewSameDirectionOverrides(updated);
     };
 
-    // Handle removing a same direction override row in the form
-    const handleRemoveSameDirectionOverride = (index) => {
-        const updated = newSameDirectionOverrides.filter((_, i) => i !== index);
-        setNewSameDirectionOverrides(updated);
+    // --- No Charge Routes Handlers ---
+    const handleAddNoChargeRoute = () => {
+        setNewNoChargeRoutes([...newNoChargeRoutes, { id: Math.random().toString(36).substring(2, 9), origin: '', destination: '' }]);
+    };
+    const handleUpdateNoChargeRoute = (id, field, value) => {
+        const updated = newNoChargeRoutes.map(item => item.id === id ? { ...item, [field]: value } : item);
+        setNewNoChargeRoutes(updated);
+    };
+    const handleRemoveNoChargeRoute = (id) => {
+        const updated = newNoChargeRoutes.filter(item => item.id !== id);
+        setNewNoChargeRoutes(updated);
+    };
+
+    // --- Drag and Drop Handlers ---
+    const handleDragEndEmptyLocations = (event) => {
+        const { active, over } = event;
+        if (active.id !== over.id) {
+            setNewEmptyLocations((items) => {
+                const oldIndex = items.findIndex((item) => item.id === active.id);
+                const newIndex = items.findIndex((item) => item.id === over.id);
+                return arrayMove(items, oldIndex, newIndex);
+            });
+        }
+    };
+    const handleDragEndSameDirectionOverrides = (event) => {
+        const { active, over } = event;
+        if (active.id !== over.id) {
+            setNewSameDirectionOverrides((items) => {
+                const oldIndex = items.findIndex((item) => item.id === active.id);
+                const newIndex = items.findIndex((item) => item.id === over.id);
+                return arrayMove(items, oldIndex, newIndex);
+            });
+        }
+    };
+    const handleDragEndNoChargeRoutes = (event) => {
+        const { active, over } = event;
+        if (active.id !== over.id) {
+            setNewNoChargeRoutes((items) => {
+                const oldIndex = items.findIndex((item) => item.id === active.id);
+                const newIndex = items.findIndex((item) => item.id === over.id);
+                return arrayMove(items, oldIndex, newIndex);
+            });
+        }
     };
 
     // Handle creating a new empty charge version
@@ -159,15 +249,16 @@ function EmptyChargeManagementPage() {
         }
 
         const emptyChargeData = {
-            empty_locations_charges: newEmptyLocations,
-            same_direction_overrides: newSameDirectionOverrides,
+            empty_locations_charges: newEmptyLocations.map(({ id, ...rest }) => rest),
+            same_direction_overrides: newSameDirectionOverrides.map(({ id, ...rest }) => rest),
+            no_charge_routes: newNoChargeRoutes.map(({ id, ...rest }) => rest), // New
             port_locations: newPortLocations.split(',').map(loc => loc.trim()).filter(loc => loc !== '')
         };
 
         try {
             await axios.post(`${API_BASE_URL}/empty-charges/new-version`, {
                 effectiveDate: newVersionEffectiveDate,
-                emptyChargeData: JSON.stringify(emptyChargeData) // Send as JSON string
+                emptyChargeData: JSON.stringify(emptyChargeData)
             });
             setSuccessMessage("အခွံချ/တင် နှုန်းထား Version အသစ် ထည့်သွင်းခြင်း အောင်မြင်ပါသည်။");
             handleCloseNewVersionDialog();
@@ -179,11 +270,11 @@ function EmptyChargeManagementPage() {
         }
     };
 
-    // Handle opening Edit Dates Dialog
+    // Handle opening Edit Version Dates Dialog
     const handleOpenEditDatesDialog = (version) => {
         setEditingVersionId(version.id);
         setEditEffectiveDate(version.effective_date);
-        setEditEndDate(version.end_date || ''); // Use empty string for null
+        setEditEndDate(version.end_date || '');
         setEditDatesDialogOpen(true);
         setError(null);
         setSuccessMessage(null);
@@ -210,7 +301,7 @@ function EmptyChargeManagementPage() {
         try {
             await axios.put(`${API_BASE_URL}/empty-charges-versions/${editingVersionId}`, {
                 effectiveDate: editEffectiveDate,
-                endDate: editEndDate || null // Send null if empty string
+                endDate: editEndDate || null
             });
             setSuccessMessage("Version ရက်စွဲများ ပြင်ဆင်ခြင်း အောင်မြင်ပါသည်။");
             handleCloseEditDatesDialog();
@@ -225,7 +316,7 @@ function EmptyChargeManagementPage() {
     // Handle opening Activate Version Dialog
     const handleOpenActivateDialog = (version) => {
         setVersionToActivate(version);
-        setActivateEffectiveDate(new Date().toISOString().split('T')[0]); // Default to today
+        setActivateEffectiveDate(new Date().toISOString().split('T')[0]);
         setActivateDialogOpen(true);
         setError(null);
         setSuccessMessage(null);
@@ -298,6 +389,7 @@ function EmptyChargeManagementPage() {
     // Handle opening View Details Dialog
     const handleViewDetails = (version) => {
         setViewingVersionDetails(version);
+        console.log("Version",version);
         setViewDetailsDialogOpen(true);
     };
 
@@ -307,23 +399,22 @@ function EmptyChargeManagementPage() {
         setViewingVersionDetails(null);
     };
 
-    // Determine if a version can be deleted (only if it's not active and not the only version)
     const canDeleteVersion = (versionId) => {
         return historicalEmptyCharges.length > 1 &&
                (!activeEmptyCharges || activeEmptyCharges.id !== versionId);
     };
 
-    // Determine if a version can be edited (only if it's not active or it's the only version)
     const canEditVersion = (versionId) => {
         return !activeEmptyCharges || activeEmptyCharges.id !== versionId || historicalEmptyCharges.length === 1;
     };
 
+    console.log("ViewingVersionDetails",viewingVersionDetails);
+
+    console.log('activeEmptyCharges', activeEmptyCharges);
+
 
     return (
         <Container maxWidth="xl" className="py-8">
-            <Typography variant="h4" component="h1" gutterBottom className="text-blue-700 font-bold">
-                အခွံချ/တင် နှုန်းထား စီမံခန့်ခွဲမှု
-            </Typography>
 
             {successMessage && (
                 <Alert severity="success" className="mb-4">{successMessage}</Alert>
@@ -341,21 +432,28 @@ function EmptyChargeManagementPage() {
                     <CheckCircleOutlineIcon color="success" />
                 </Box>
                 {activeEmptyCharges ? (
-                    <Box>
+                    <Box
+                        sx={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-start',
+                        }}
+                    >
                         <Typography variant="body1">
                             <strong>Version:</strong> {activeEmptyCharges.versionNumber}
                         </Typography>
                         <Typography variant="body1">
                             <strong>စတင်သက်ရောက်သည့်ရက်:</strong> {activeEmptyCharges.effectiveDate}
                         </Typography>
-                        {/* <Button
+                        <Button
                             variant="outlined"
                             startIcon={<InfoOutlinedIcon />}
                             onClick={() => handleViewDetails(activeEmptyCharges)}
-                            className="mt-4 text-blue-600 border-blue-600 hover:bg-blue-50"
+                            className="mt-4"
+                            sx={{mt:3}}
                         >
                             အသေးစိတ်ကြည့်ရန်
-                        </Button> */}
+                        </Button>
                     </Box>
                 ) : (
                     <Typography>လက်ရှိအသက်ဝင်နေသော နှုန်းထား မရှိသေးပါ။</Typography>
@@ -368,7 +466,6 @@ function EmptyChargeManagementPage() {
                     variant="contained"
                     startIcon={<AddIcon />}
                     onClick={() => handleOpenNewVersionDialog(false)}
-                    className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
                 >
                     Version အသစ်ဖန်တီးမည် (အစမှ)
                 </Button>
@@ -376,7 +473,6 @@ function EmptyChargeManagementPage() {
                     variant="contained"
                     startIcon={<ContentCopyIcon />}
                     onClick={() => handleOpenNewVersionDialog(true)}
-                    className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
                     disabled={!activeEmptyCharges}
                 >
                     လက်ရှိနှုန်းထားမှ ကော်ပီပွားဖန်တီးမည်
@@ -418,49 +514,41 @@ function EmptyChargeManagementPage() {
                                 </TableRow>
                             ) : (
                                 historicalEmptyCharges.map((version) => (
-                                    <TableRow key={version.id} className="hover:bg-gray-50">
+                                    <TableRow key={version.id}>
                                         <TableCell>{version.version_number}</TableCell>
                                         <TableCell>{version.effective_date}</TableCell>
                                         <TableCell>{version.end_date || 'N/A'}</TableCell>
-                                        <TableCell>{new Date(version.created_at).toLocaleDateString()}</TableCell>
+                                        <TableCell>{new Date(version.created_at).toLocaleString()}</TableCell>
+                                        <TableCell>{activeEmptyCharges && activeEmptyCharges.id === version.id ? "Active" : "Historical"}</TableCell>
                                         <TableCell>
-                                            {activeEmptyCharges && activeEmptyCharges.id === version.id ? (
-                                                <Typography variant="body2" color="success.main" className="font-semibold">
-                                                    Active
-                                                </Typography>
-                                            ) : (
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Inactive
-                                                </Typography>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Tooltip title="အသေးစိတ်ကြည့်ရန်">
-                                                <IconButton color="info" size="small" onClick={() => handleViewDetails(version)}>
-                                                    <InfoOutlinedIcon />
-                                                </IconButton>
-                                            </Tooltip>
-                                            {canEditVersion(version.id) && (
-                                                <Tooltip title="ရက်စွဲများ ပြင်ဆင်ရန်">
-                                                    <IconButton color="primary" size="small" onClick={() => handleOpenEditDatesDialog(version)}>
-                                                        <EditIcon />
+                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                <Tooltip title="အသေးစိတ်ကြည့်ရန်">
+                                                    <IconButton color="primary" onClick={() => handleViewDetails(version)}>
+                                                        <InfoOutlinedIcon />
                                                     </IconButton>
                                                 </Tooltip>
-                                            )}
-                                            {activeEmptyCharges && activeEmptyCharges.id !== version.id && (
-                                                <Tooltip title="ဤ Version ကို အသက်ဝင်စေရန်">
-                                                    <IconButton color="success" size="small" onClick={() => handleOpenActivateDialog(version)}>
-                                                        <CheckCircleOutlineIcon />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            )}
-                                            {canDeleteVersion(version.id) && (
-                                                <Tooltip title="ဖျက်ရန်">
-                                                    <IconButton color="error" size="small" onClick={() => handleOpenDeleteConfirm(version.id, version.version_number)}>
-                                                        <DeleteIcon />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            )}
+                                                {canEditVersion(version.id) && (
+                                                    <Tooltip title="ရက်စွဲများပြင်ရန်">
+                                                        <IconButton color="secondary" onClick={() => handleOpenEditDatesDialog(version)}>
+                                                            <EditIcon />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
+                                                {!activeEmptyCharges || activeEmptyCharges.id !== version.id ? (
+                                                    <Tooltip title="အသက်ဝင်စေရန်">
+                                                        <IconButton color="success" onClick={() => handleOpenActivateDialog(version)}>
+                                                            <CheckCircleOutlineIcon />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                ) : null}
+                                                {canDeleteVersion(version.id) && (
+                                                    <Tooltip title="ဖျက်ရန်">
+                                                        <IconButton color="error" onClick={() => handleOpenDeleteConfirm(version.id, version.version_number)}>
+                                                            <DeleteIcon />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
+                                            </Box>
                                         </TableCell>
                                     </TableRow>
                                 ))
@@ -471,272 +559,337 @@ function EmptyChargeManagementPage() {
             </Paper>
 
             {/* New Version Dialog */}
-            <Dialog
-                open={newVersionDialogOpen}
-                onClose={handleCloseNewVersionDialog}
-                maxWidth="lg"
-                fullWidth
-            >
+            <Dialog open={newVersionDialogOpen} onClose={handleCloseNewVersionDialog} maxWidth="md" fullWidth>
                 <DialogTitle>အခွံချ/တင် နှုန်းထား Version အသစ် ဖန်တီးမည်</DialogTitle>
                 <DialogContent dividers>
                     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-                    <TextField
-                        label="စတင်သက်ရောက်မည့်ရက်"
-                        type="date"
-                        fullWidth
-                        variant="outlined"
-                        value={newVersionEffectiveDate}
-                        onChange={(e) => setNewVersionEffectiveDate(e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={{ mb: 3 }}
-                    />
+                    <Box sx={{ mb: 2 }}>
+                        <Typography variant="h6" gutterBottom>
+                            စတင်သက်ရောက်မည့်ရက်
+                        </Typography>
+                        <TextField
+                            type="date"
+                            fullWidth
+                            value={newVersionEffectiveDate}
+                            onChange={(e) => setNewVersionEffectiveDate(e.target.value)}
+                        />
+                    </Box>
 
-                    <Typography variant="h6" sx={{ mt: 3, mb: 2, color: 'text.primary' }}>
-                        အခွံချ/တင် နေရာအလိုက် နှုန်းထားများ
-                    </Typography>
-                    <TableContainer component={Paper} sx={{ mb: 3, maxHeight: 300 }}>
-                        <Table size="small" stickyHeader>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>နေရာ</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>၄၀' ကွန်တိန်နာခ</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>လုပ်ဆောင်ချက်</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {newEmptyLocations.map((loc, index) => (
-                                    <TableRow key={index}>
-                                        <TableCell>
-                                            <TextField
-                                                value={loc.location}
-                                                onChange={(e) => handleUpdateEmptyLocation(index, 'location', e.target.value)}
-                                                variant="outlined"
-                                                size="small"
-                                                fullWidth
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <TextField
-                                                type="number"
-                                                value={loc.charge_40_ft}
-                                                onChange={(e) => handleUpdateEmptyLocation(index, 'charge_40_ft', e.target.value)}
-                                                variant="outlined"
-                                                size="small"
-                                                fullWidth
-                                                InputProps={{
-                                                    endAdornment: (
-                                                        <Typography variant="body2" color="textSecondary">
-                                                            {loc.charge_40_ft && !isNaN(parseFloat(loc.charge_40_ft)) ? formatMMK(parseFloat(loc.charge_40_ft)) : ''}
-                                                        </Typography>
-                                                    ),
-                                                }}
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <IconButton color="error" size="small" onClick={() => handleRemoveEmptyLocation(index)}>
-                                                <DeleteIcon />
-                                            </IconButton>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                    <Button
-                        variant="outlined"
-                        startIcon={<AddIcon />}
-                        onClick={handleAddEmptyLocation}
-                        sx={{ mb: 4 }}
-                    >
-                        နေရာအသစ်ထည့်ရန်
-                    </Button>
+                    {/* Table 1: အခွံချ/တင် နေရာအလိုက် နှုန်းထားများ */}
+                    <Box sx={{ mt: 3, mb: 2 }}>
+                        <Typography variant="h6">
+                            အခွံချ/တင် နေရာအလိုက် နှုန်းထားများ
+                        </Typography>
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEndEmptyLocations}
+                        >
+                            <TableContainer component={Paper} variant="outlined" sx={{mt: 3}}>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={{ width: '40px' }}></TableCell>
+                                            <TableCell>အခွံချ/တင် နေရာ</TableCell>
+                                            <TableCell>၄၀ပေ နှုန်းထား</TableCell>
+                                            <TableCell>လုပ်ဆောင်ချက်</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        <SortableContext items={newEmptyLocations.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                                            {newEmptyLocations.map((item, index) => (
+                                                <SortableRow key={item.id} item={item}>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            value={item.location}
+                                                            onChange={(e) => handleUpdateEmptyLocation(item.id, 'location', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            type="number"
+                                                            value={item.charge_40_ft}
+                                                            onChange={(e) => handleUpdateEmptyLocation(item.id, 'charge_40_ft', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <IconButton color="error" onClick={() => handleRemoveEmptyLocation(item.id)}>
+                                                            <DeleteIcon />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </SortableRow>
+                                            ))}
+                                        </SortableContext>
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </DndContext>
+                        <Button
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            onClick={handleAddEmptyLocation}
+                            sx={{ mt: 1 }}
+                        >
+                            နှုန်းထားအသစ်ထည့်မည်
+                        </Button>
+                    </Box>
 
-                    <Typography variant="h6" sx={{ mt: 3, mb: 2, color: 'text.primary' }}>
-                        လားရာတူ ခြွင်းချက်များ (Same Direction Overrides)
-                    </Typography>
-                    <TableContainer component={Paper} sx={{ mb: 3, maxHeight: 300 }}>
-                        <Table size="small" stickyHeader>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>Main Trip မှ</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>Main Trip သို့</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ နေရာ</TableCell>
-                                    <TableCell sx={{ fontWeight: 'bold' }}>လုပ်ဆောင်ချက်</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {newSameDirectionOverrides.map((rule, index) => (
-                                    <TableRow key={index}>
-                                        <TableCell>
-                                            <TextField
-                                                value={rule.main_trip_origin}
-                                                onChange={(e) => handleUpdateSameDirectionOverride(index, 'main_trip_origin', e.target.value)}
-                                                variant="outlined"
-                                                size="small"
-                                                fullWidth
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <TextField
-                                                value={rule.main_trip_destination}
-                                                onChange={(e) => handleUpdateSameDirectionOverride(index, 'main_trip_destination', e.target.value)}
-                                                variant="outlined"
-                                                size="small"
-                                                fullWidth
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <TextField
-                                                value={rule.empty_location}
-                                                onChange={(e) => handleUpdateSameDirectionOverride(index, 'empty_location', e.target.value)}
-                                                variant="outlined"
-                                                size="small"
-                                                fullWidth
-                                            />
-                                        </TableCell>
-                                        <TableCell>
-                                            <IconButton color="error" size="small" onClick={() => handleRemoveSameDirectionOverride(index)}>
-                                                <DeleteIcon />
-                                            </IconButton>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </TableContainer>
-                    <Button
-                        variant="outlined"
-                        startIcon={<AddIcon />}
-                        onClick={handleAddSameDirectionOverride}
-                        sx={{ mb: 4 }}
-                    >
-                        ခြွင်းချက်အသစ်ထည့်ရန်
-                    </Button>
+                    {/* Table 2: */}
+                    <Box sx={{ mt: 3, mb: 2 }}>
+                        <Typography variant="h6">
+                            Extra Charges ရရှိမည့် လားရာတူ လမ်းကြောင်းများ
+                        </Typography>
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEndSameDirectionOverrides}
+                        >
+                            <TableContainer component={Paper} variant="outlined" sx={{mt:3}}>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={{ width: '40px' }}></TableCell>
+                                            {/* <TableCell>ခရီးစတင်ရာ</TableCell>
+                                            <TableCell>ခရီးဆုံးရာ</TableCell>
+                                            <TableCell>အခွံချ/တင် နေရာ</TableCell>
+                                            <TableCell>လုပ်ဆောင်ချက်</TableCell> */}
+                                            <TableCell>ပန်းတိုင်</TableCell>
+                                            <TableCell>အခွံချ/တင် နေရာ</TableCell>
+                                            <TableCell>ပေ၄၀နှုန်းထား</TableCell>
+                                            <TableCell>လုပ်ဆောင်ချက်</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        <SortableContext items={newSameDirectionOverrides.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                                            {newSameDirectionOverrides.map((item, index) => (
+                                                <SortableRow key={item.id} item={item}>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            value={item.location}
+                                                            onChange={(e) => handleUpdateSameDirectionOverride(item.id, 'item_location', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            value={item.empty_location}
+                                                            onChange={(e) => handleUpdateSameDirectionOverride(item.id, 'empty_location', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            value={item.charge_40_ft}
+                                                            onChange={(e) => handleUpdateSameDirectionOverride(item.id, 'charge_40_ft', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <IconButton color="error" onClick={() => handleRemoveSameDirectionOverride(item.id)}>
+                                                            <DeleteIcon />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </SortableRow>
+                                            ))}
+                                        </SortableContext>
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </DndContext>
+                        <Button
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            onClick={handleAddSameDirectionOverride}
+                            sx={{ mt: 1 }}
+                        >
+                            ခြွင်းချက်အသစ်ထည့်မည်
+                        </Button>
+                    </Box>
 
-                    <Typography variant="h6" sx={{ mt: 3, mb: 2, color: 'text.primary' }}>
-                        ဆိပ်ကမ်းနေရာများ (Port Locations)
-                        <Tooltip title="ကွန်တိန်နာတင်/ချရာတွင် အဓိကကျသော ဆိပ်ကမ်းများ၏ အမည်များကို ကော်မာ (,) ခြား၍ ထည့်သွင်းပါ။ ဥပမာ: MIP, AWPT, MIIT">
-                            <InfoOutlinedIcon sx={{ ml: 1, verticalAlign: 'middle', fontSize: '1.2rem' }} color="action" />
-                        </Tooltip>
-                    </Typography>
-                    <TextField
-                        label="ဆိပ်ကမ်းအမည်များ (ကော်မာခြား၍)"
-                        fullWidth
-                        variant="outlined"
-                        value={newPortLocations}
-                        onChange={(e) => setNewPortLocations(e.target.value)}
-                        placeholder="ဥပမာ: MIP, AWPT, MIIT, သီလဝါ"
-                        sx={{ mb: 3 }}
-                    />
+                    {/* Table 3: လမ်းကြောင်းခ မရှိနိုင်သော လမ်းကြောင်းများ (No Charge Routes) */}
+                    <Box sx={{ mt: 3, mb: 2}}>
+                        <Typography variant="h6">
+                            လမ်းကြောင်းခ မရှိနိုင်သော လမ်းကြောင်းများ
+                        </Typography>
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEndNoChargeRoutes}
+                        >
+                            <TableContainer component={Paper} variant="outlined" sx={{mt: 3}}>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell sx={{ width: '40px' }}></TableCell>
+                                            <TableCell>စတင်ရာ</TableCell>
+                                            <TableCell>ပန်းတိုင်</TableCell>
+                                            <TableCell>အခွံတင်/ချ နေရာ</TableCell>
+                                            <TableCell>လုပ်ဆောင်ချက်</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        <SortableContext items={newNoChargeRoutes.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                                            {newNoChargeRoutes.map((item, index) => (
+                                                <SortableRow key={item.id} item={item}>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            value={item.main_trip_origin}
+                                                            onChange={(e) => handleUpdateNoChargeRoute(item.id, 'main_trip_origin', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            value={item.main_trip_destination}
+                                                            onChange={(e) => handleUpdateNoChargeRoute(item.id, 'main_trip_destination', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <TextField
+                                                            fullWidth
+                                                            variant="standard"
+                                                            value={item.empty_location}
+                                                            onChange={(e) => handleUpdateNoChargeRoute(item.id, 'empty_location', e.target.value)}
+                                                        />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <IconButton color="error" onClick={() => handleRemoveNoChargeRoute(item.id)}>
+                                                            <DeleteIcon />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </SortableRow>
+                                            ))}
+                                        </SortableContext>
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </DndContext>
+                        <Button
+                            variant="outlined"
+                            startIcon={<AddIcon />}
+                            onClick={handleAddNoChargeRoute}
+                            sx={{ mt: 1 }}
+                        >
+                            လမ်းကြောင်းအသစ်ထည့်မည်
+                        </Button>
+                    </Box>
 
+                    {/* Port Locations */}
+                    <Box sx={{ mt: 3, mb: 2 }}>
+                        <Typography variant="h6">
+                            ဆိပ်ကမ်းနေရာများ (Port Locations)
+                        </Typography>
+                        <TextField
+                            fullWidth
+                            value={newPortLocations}
+                            onChange={(e) => setNewPortLocations(e.target.value)}
+                            placeholder="အေးရှားဝေါ,MIP, ... (comma ဖြင့် ခွဲရေးပါ)"
+                            sx={{mt:2}}
+                        />
+                    </Box>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={handleCloseNewVersionDialog} color="secondary" startIcon={<CancelIcon />}>
-                        မလုပ်တော့ပါ
-                    </Button>
-                    <Button onClick={handleCreateNewVersion} color="primary" variant="contained" startIcon={<SaveIcon />}>
-                        ဖန်တီးမည်
+                    <Button onClick={handleCloseNewVersionDialog}>ပယ်ဖျက်မည်</Button>
+                    <Button
+                        onClick={handleCreateNewVersion}
+                        variant="contained"
+                        disabled={!newVersionEffectiveDate || newEmptyLocations.length === 0}
+                    >
+                        သိမ်းဆည်းမည်
                     </Button>
                 </DialogActions>
             </Dialog>
 
-            {/* Edit Version Dates Dialog */}
-            <Dialog
-                open={editDatesDialogOpen}
-                onClose={handleCloseEditDatesDialog}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>Version ရက်စွဲများ ပြင်ဆင်ရန်</DialogTitle>
-                <DialogContent dividers>
+            {/* Edit Dates Dialog */}
+            <Dialog open={editDatesDialogOpen} onClose={handleCloseEditDatesDialog} maxWidth="sm" fullWidth>
+                <DialogTitle>Version ရက်စွဲများ ပြင်ဆင်မည်</DialogTitle>
+                <DialogContent>
                     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
                     <TextField
+                        margin="dense"
                         label="စတင်သက်ရောက်မည့်ရက်"
                         type="date"
                         fullWidth
                         variant="outlined"
                         value={editEffectiveDate}
                         onChange={(e) => setEditEffectiveDate(e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={{ mb: 3 }}
+                        InputLabelProps={{
+                            shrink: true,
+                        }}
                     />
                     <TextField
-                        label="ပြီးဆုံးသည့်ရက် (မရှိလျှင် မထည့်ပါ)"
+                        margin="dense"
+                        label="ပြီးဆုံးမည့်ရက်"
                         type="date"
                         fullWidth
                         variant="outlined"
                         value={editEndDate}
                         onChange={(e) => setEditEndDate(e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={{ mb: 3 }}
+                        InputLabelProps={{
+                            shrink: true,
+                        }}
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={handleCloseEditDatesDialog} color="secondary" startIcon={<CancelIcon />}>
-                        မလုပ်တော့ပါ
-                    </Button>
-                    <Button onClick={handleUpdateVersionDates} color="primary" variant="contained" startIcon={<SaveIcon />}>
-                        သိမ်းဆည်းမည်
-                    </Button>
+                    <Button onClick={handleCloseEditDatesDialog}>ပယ်ဖျက်မည်</Button>
+                    <Button onClick={handleUpdateVersionDates} variant="contained">บันทึกမည်</Button>
                 </DialogActions>
             </Dialog>
 
             {/* Activate Version Dialog */}
-            <Dialog
-                open={activateDialogOpen}
-                onClose={handleCloseActivateDialog}
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle>Version အသက်ဝင်စေရန် အတည်ပြုပါ</DialogTitle>
-                <DialogContent dividers>
+            <Dialog open={activateDialogOpen} onClose={handleCloseActivateDialog} maxWidth="sm" fullWidth>
+                <DialogTitle>Version ကို အသက်ဝင်စေမည်</DialogTitle>
+                <DialogContent>
                     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-                    {versionToActivate && (
-                        <Typography sx={{ mb: 2 }}>
-                            Version <strong>{versionToActivate.version_number}</strong> ကို လက်ရှိအသက်ဝင်နေသော နှုန်းထားအဖြစ် သတ်မှတ်မှာ သေချာပါသလား။
-                            လက်ရှိအသက်ဝင်နေသော နှုန်းထားသည် အလိုအလျောက် ပြီးဆုံးသွားပါမည်။
+                    <DialogContentText>
+                        <Typography variant="body1">
+                            Version **{versionToActivate?.version_number}** ကို လက်ရှိနှုန်းထားအဖြစ် အသက်ဝင်စေမည်။
                         </Typography>
-                    )}
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            လက်ရှိအသက်ဝင်နေသော Version ကို ဤရက်စွဲမတိုင်မီ ပြီးဆုံးသွားအောင် အလိုအလျောက် ပြင်ဆင်ပေးပါမည်။
+                        </Typography>
+                    </DialogContentText>
                     <TextField
+                        autoFocus
+                        margin="dense"
                         label="အသက်ဝင်စေမည့်ရက်"
                         type="date"
                         fullWidth
                         variant="outlined"
                         value={activateEffectiveDate}
                         onChange={(e) => setActivateEffectiveDate(e.target.value)}
-                        InputLabelProps={{ shrink: true }}
-                        sx={{ mb: 3 }}
+                        InputLabelProps={{
+                            shrink: true,
+                        }}
+                        sx={{ mt: 2 }}
                     />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={handleCloseActivateDialog} color="secondary" startIcon={<CancelIcon />}>
-                        မလုပ်တော့ပါ
-                    </Button>
-                    <Button onClick={handleActivateVersion} color="success" variant="contained" startIcon={<CheckCircleOutlineIcon />}>
-                        အသက်ဝင်စေမည်
-                    </Button>
+                    <Button onClick={handleCloseActivateDialog}>ပယ်ဖျက်မည်</Button>
+                    <Button onClick={handleActivateVersion} variant="contained">အသက်ဝင်စေမည်</Button>
                 </DialogActions>
             </Dialog>
 
             {/* Delete Confirmation Dialog */}
-            <Dialog
-                open={deleteConfirmOpen}
-                onClose={handleCloseDeleteConfirm}
-                aria-labelledby="delete-dialog-title"
-                aria-describedby="delete-dialog-description"
-                maxWidth="sm"
-                fullWidth
-            >
-                <DialogTitle id="delete-dialog-title">Version ဖျက်ရန် အတည်ပြုပါ</DialogTitle>
+            <Dialog open={deleteConfirmOpen} onClose={handleCloseDeleteConfirm}>
+                <DialogTitle>ဖျက်သိမ်းရန် အတည်ပြုပါ</DialogTitle>
                 <DialogContent>
-                    <DialogContentText id="delete-dialog-description">
-                        Version <strong>{versionToDeleteNumber}</strong> ကို ဖျက်ပစ်မှာ သေချာပါသလား။ ဤလုပ်ဆောင်ချက်ကို ပြန်လည်ပြင်ဆင်၍ မရနိုင်ပါ။
+                    <DialogContentText>
+                        Version **{versionToDeleteNumber}** ကို ဖျက်ပစ်ရန် သေချာပါသလား။ ဤလုပ်ဆောင်ချက်ကို ပြန်လည်ပြင်ဆင်နိုင်မည် မဟုတ်ပါ။
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={handleCloseDeleteConfirm} color="secondary">
-                        မလုပ်တော့ပါ
-                    </Button>
+                    <Button onClick={handleCloseDeleteConfirm}>ပယ်ဖျက်မည်</Button>
                     <Button onClick={handleDeleteVersion} color="error" variant="contained">
                         ဖျက်မည်
                     </Button>
@@ -744,32 +897,51 @@ function EmptyChargeManagementPage() {
             </Dialog>
 
             {/* View Details Dialog */}
-            <Dialog
-                open={viewDetailsDialogOpen}
-                onClose={handleCloseViewDetailsDialog}
-                maxWidth="lg"
-                fullWidth
-            >
-                <DialogTitle>Version {viewingVersionDetails?.version_number} အသေးစိတ်</DialogTitle>
+            <Dialog open={viewDetailsDialogOpen} onClose={handleCloseViewDetailsDialog} maxWidth="md" fullWidth>
+                <DialogTitle>Version {viewingVersionDetails?.versionNumber} အသေးစိတ်</DialogTitle>
                 <DialogContent dividers>
                     {viewingVersionDetails && (
                         <Box>
-                            <Typography variant="h6" sx={{ mb: 2 }}>
+                            <Typography variant="h6" gutterBottom>
                                 အခွံချ/တင် နေရာအလိုက် နှုန်းထားများ
                             </Typography>
-                            <TableContainer component={Paper} sx={{ mb: 3, maxHeight: 300 }}>
-                                <Table size="small" stickyHeader>
+                            <TableContainer component={Paper} variant="outlined">
+                                <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell sx={{ fontWeight: 'bold' }}>နေရာ</TableCell>
-                                            <TableCell sx={{ fontWeight: 'bold' }}>၄၀' ကွန်တိန်နာခ</TableCell>
+                                            <TableCell>အခွံချ/တင် နေရာ</TableCell>
+                                            <TableCell>၄၀ပေ နှုန်းထား</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {(viewingVersionDetails.empty_charge_data?.empty_locations_charges || []).map((loc, index) => (
+                                        {(viewingVersionDetails.emptyCharges?.empty_locations_charges || []).map((charge, index) => (<TableRow key={index}>
+                                                <TableCell>{charge.location}</TableCell>
+                                                <TableCell>{formatMMK(charge.charge_40_ft)}</TableCell>
+                                            </TableRow>
+                                            )
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+
+                            <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
+                                Extra Charges ရရှိမည့် လားရာတူ လမ်းကြောင်းများ
+                            </Typography>
+                            <TableContainer component={Paper} variant="outlined">
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>ပန်းတိုင်</TableCell>
+                                            <TableCell>အခွံချ/တင် နေရာ</TableCell>
+                                            <TableCell>ပေ၄၀ နှုန်းထား</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {(viewingVersionDetails.emptyCharges?.same_direction_overrides || []).map((rule, index) => (
                                             <TableRow key={index}>
-                                                <TableCell>{loc.location}</TableCell>
-                                                <TableCell>{formatMMK(loc.charge_40_ft)}</TableCell>
+                                                <TableCell>{rule.location}</TableCell>
+                                                <TableCell>{rule.empty_location}</TableCell>
+                                                <TableCell>{rule.charge_40_ft}</TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -777,23 +949,23 @@ function EmptyChargeManagementPage() {
                             </TableContainer>
 
                             <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
-                                လားရာတူ ခြွင်းချက်များ (Same Direction Overrides)
+                                လမ်းကြောင်းခ မရှိနိုင်သော လမ်းကြောင်းများ
                             </Typography>
-                            <TableContainer component={Paper} sx={{ mb: 3, maxHeight: 300 }}>
-                                <Table size="small" stickyHeader>
+                            <TableContainer component={Paper} variant="outlined">
+                                <Table size="small">
                                     <TableHead>
                                         <TableRow>
-                                            <TableCell sx={{ fontWeight: 'bold' }}>Main Trip မှ</TableCell>
-                                            <TableCell sx={{ fontWeight: 'bold' }}>Main Trip သို့</TableCell>
-                                            <TableCell sx={{ fontWeight: 'bold' }}>အခွံတင်/ချ နေရာ</TableCell>
+                                            <TableCell>စတင်ရာ</TableCell>
+                                            <TableCell>ပန်းတိုင်</TableCell>
+                                            <TableCell>အခွံတင်/ချနေရာ</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {(viewingVersionDetails.empty_charge_data?.same_direction_overrides || []).map((rule, index) => (
+                                        {(viewingVersionDetails.emptyCharges?.no_charge_routes || []).map((route, index) => (
                                             <TableRow key={index}>
-                                                <TableCell>{rule.main_trip_origin}</TableCell>
-                                                <TableCell>{rule.main_trip_destination}</TableCell>
-                                                <TableCell>{rule.empty_location}</TableCell>
+                                                <TableCell>{route.main_trip_origin}</TableCell>
+                                                <TableCell>{route.main_trip_destination}</TableCell>
+                                                <TableCell>{route.empty_location}</TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -805,7 +977,7 @@ function EmptyChargeManagementPage() {
                             </Typography>
                             <Paper variant="outlined" sx={{ p: 2 }}>
                                 <Typography>
-                                    {(viewingVersionDetails.empty_charge_data?.port_locations || []).join(', ')}
+                                    {(viewingVersionDetails.emptyCharges?.port_locations || []).join(', ')}
                                 </Typography>
                             </Paper>
                         </Box>

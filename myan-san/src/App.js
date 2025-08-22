@@ -7,14 +7,18 @@ import DriverManagementPage from './pages/DriverManagementPage';
 import AllTripsPage from './pages/AllTripsPage';
 import FuelConsumptionPage from './pages/FuelConsumptionPage';
 import SettingsPage from './pages/SettingsPage';
-import RouteChargesManagementPage from './pages/RouteChargesManagementPage'; // RouteChargesManagementPage ကို import လုပ်ပါ။
-import EmptyChargeManagementPage from './pages/EmptyChargeManagementPage'; // EmptyChargeManagementPage ကို import လုပ်ပါ။
+import RouteChargesManagementPage from './pages/RouteChargesManagementPage';
+import EmptyChargeManagementPage from './pages/EmptyChargeManagementPage';
+import DeveloperPage from './pages/DeveloperPage'; // DeveloperPage ကို import လုပ်သည်
 import './index.css';
 
-function App() {
-  const [currentPage, setCurrentPage] = useState('home'); // Default page is 'home'
+// LocalizationProvider နဲ့ AdapterDayjs ကို import လုပ်ပါမယ်။
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 
-  // This function will render the correct page based on currentPage state
+function App() {
+  const [currentPage, setCurrentPage] = useState('home');
+
   const renderPage = () => {
     switch (currentPage) {
       case 'home':
@@ -27,21 +31,25 @@ function App() {
         return <AllTripsPage />;
       case 'fuelConsumption':
         return <FuelConsumptionPage />;
-      case 'routeChargesManagement': // RouteChargesManagementPage ကို render လုပ်ပါ။
+      case 'routeChargesManagement':
         return <RouteChargesManagementPage />;
-      case 'emptyChargeManagement': // EmptyChargeManagementPage ကို render လုပ်ပါ။
+      case 'emptyChargeManagement':
         return <EmptyChargeManagementPage />;
       case 'settings':
         return <SettingsPage />;
+      case 'developer': // DeveloperPage အတွက် case အသစ် ထည့်သွင်းသည်
+        return <DeveloperPage />;
       default:
         return <HomePage />;
     }
   };
 
   return (
-    <DashboardLayout currentPage={currentPage} setCurrentPage={setCurrentPage}>
-      {renderPage()}
-    </DashboardLayout>
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <DashboardLayout currentPage={currentPage} setCurrentPage={setCurrentPage}>
+        {renderPage()}
+      </DashboardLayout>
+    </LocalizationProvider>
   );
 }
 

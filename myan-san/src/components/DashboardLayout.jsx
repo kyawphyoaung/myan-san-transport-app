@@ -1,5 +1,5 @@
 // myan-san/src/components/DashboardLayout.jsx
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import {
   Menu as MenuIcon,
   Close as CloseIcon,
@@ -10,13 +10,13 @@ import {
   LocalGasStation as LocalGasStationIcon,
   Settings as SettingsIcon,
   AttachMoney as AttachMoneyIcon,
-  MonetizationOn as MonetizationOnIcon
+  MonetizationOn as MonetizationOnIcon,
+  Code as CodeIcon // Developer icon အတွက် CodeIcon ကို ထည့်သွင်းသည်
 } from '@mui/icons-material';
-import { IconButton, Typography, Box, useTheme } from '@mui/material';
+import { IconButton, useTheme } from '@mui/material';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 
-// AppProvider ကနေ useContext ကို ရယူဖို့ useApp ကို import လုပ်ပါ
 import { useApp } from './AppProvider';
 
 function DashboardLayout({ currentPage, setCurrentPage, children }) {
@@ -25,11 +25,9 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
   const toggleButtonRef = useRef(null);
   let sidebarCloseTimer = useRef(null);
 
-  // useApp hook ကို အသုံးပြုပြီး mode နဲ့ setMode function ကို ရယူပါ
   const { mode, setMode } = useApp();
   const theme = useTheme();
 
-  // Page titles and their corresponding icons
   const pageInfo = {
     home: { title: 'ကားစာရင်း', icon: <HomeIcon sx={{ mr: 1 }} /> },
     carManagement: { title: 'ကားစီမံခန့်ခွဲမှု', icon: <DirectionsCarIcon sx={{ mr: 1 }} /> },
@@ -38,7 +36,8 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
     fuelConsumption: { title: 'ဆီစားနှုန်း', icon: <LocalGasStationIcon sx={{ mr: 1 }} /> },
     routeChargesManagement: { title: 'လမ်းကြောင်းခ စီမံခန့်ခွဲမှု', icon: <AttachMoneyIcon sx={{ mr: 1 }} /> },
     emptyChargeManagement: { title: 'အခွံချ/တင် နှုန်းထား စီမံခန့်ခွဲမှု', icon: <MonetizationOnIcon sx={{ mr: 1 }} /> },
-    settings: { title: 'ချိန်ညှိမှုများ', icon: <SettingsIcon sx={{ mr: 1 }} /> },
+    settings: { title: 'ချိန်ညှိမှုများ', icon: <SettingsIcon sx={{ mr: 2 }} /> }, // icon spacing ကို ပြင်ထားသည်
+    developer: { title: 'Developer Tools', icon: <CodeIcon sx={{ mr: 2 }} /> }, // Developer Page အတွက် icon
   };
 
   const handlePageChange = (page) => {
@@ -66,7 +65,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
     clearTimeout(sidebarCloseTimer.current);
   };
 
-  const headerHeight = '64px';
   const sidebarWidth = '256px';
 
   return (
@@ -74,7 +72,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
       className={`flex min-h-screen font-inter relative ${mode === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
         }`}
     >
-      {/* Fixed Top Header (အပြာရောင် ဘားတန်း) */}
       <header
         className="fixed top-0 left-0 w-full h-16 bg-blue-800 text-white shadow-lg flex items-center px-4 z-30"
       >
@@ -91,7 +88,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
           {pageInfo[currentPage]?.title}
         </h1>
 
-        {/* Theme ကို ပြောင်းဖို့ ခလုတ် */}
         <IconButton
           sx={{ ml: 1, color: 'white' }}
           onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')}
@@ -100,7 +96,6 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
         </IconButton>
       </header>
 
-      {/* Sidebar */}
       <aside
         ref={sidebarRef}
         onMouseEnter={handleMouseEnterSidebar}
@@ -180,6 +175,16 @@ function DashboardLayout({ currentPage, setCurrentPage, children }) {
               >
                 <SettingsIcon sx={{ mr: 2 }} />
                 {pageInfo.settings.title}
+              </button>
+            </li>
+            {/* Developer Page Link ကို ဒီနေရာမှာ ထည့်သွင်းသည် */}
+            <li className="mb-2">
+              <button
+                onClick={() => handlePageChange('developer')}
+                className={`flex items-center w-full text-left px-4 py-2 rounded-md transition duration-300 ease-in-out ${currentPage === 'developer' ? 'bg-blue-600 text-white shadow-md' : 'text-blue-200 hover:text-white hover:bg-blue-700'}`}
+              >
+                <CodeIcon sx={{ mr: 2 }} />
+                {pageInfo.developer.title}
               </button>
             </li>
           </ul>

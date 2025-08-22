@@ -1,25 +1,25 @@
 // backend/server.js
-const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const cors = require('cors');
-const path = require('path');
-const fs = require('fs'); // For reading static JSON file if needed, though we'll primarily use DB
+const express = require("express");
+const sqlite3 = require("sqlite3").verbose();
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs"); // For reading static JSON file if needed, though we'll primarily use DB
 
 const app = express();
 const PORT = 5001; // သင်ပြောင်းလဲထားသော Port နံပါတ်ကို သေချာစစ်ဆေးပါ။
-const initialEmptyChargeData = require('./initialEmptyChargeData.json'); 
+const initialEmptyChargeData = require("./initialEmptyChargeData.json");
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 // Database initialization
-const dbPath = path.resolve(__dirname, 'database.db');
+const dbPath = path.resolve(__dirname, "database.db");
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
-    console.error('Database connection error:', err.message);
+    console.error("Database connection error:", err.message);
   } else {
-    console.log('Connected to the SQLite database.');
+    console.log("Connected to the SQLite database.");
     // Enable foreign key constraints
     db.run("PRAGMA foreign_keys = ON; ", (pragmaErr) => {
       if (pragmaErr) {
@@ -31,66 +31,144 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
     // Database tables များကို ဖန်တီးပါ။
     db.serialize(() => {
-      // Trips Table
-      db.run(`
-        CREATE TABLE IF NOT EXISTS trips (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          date TEXT NOT NULL,
-          start_time TEXT,
-          end_date TEXT,
-          end_time TEXT,
-          car_no TEXT NOT NULL,
-          from_location TEXT NOT NULL,
-          to_location TEXT NOT NULL,
-          route_charge INTEGER,
-          empty_pickup_dropoff_charge INTEGER,
-          empty_handling_location TEXT,
-          overnight_status TEXT,
-          overnight_charges INTEGER,
-          day_over_status TEXT,
-          day_over_charges INTEGER,
-          remarks TEXT,
-          agent_name TEXT, -- NEW: agent_name column
-          total_charge INTEGER,
-          km_travelled INTEGER,
-          fuel_amount REAL DEFAULT 0,
-          fuel_cost INTEGER DEFAULT 0,
-          driver_name TEXT DEFAULT 'N/A',
-          is_manual_edited INTEGER DEFAULT 0,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `, (err) => {
-        if (err) console.error("Error creating trips table:", err.message);
-        else {
-          console.log("Trips table created or already exists.");
-          // Add driver_name, updated_at, empty_handling_location, start_time, end_date, end_time columns if they don't exist
-          db.all(`PRAGMA table_info(trips)`, (err, columns) => {
-            if (err) { console.error("Error checking table info for trips:", err.message); return; }
-            const existingColumns = new Set(columns.map(col => col.name));
-            const newTripColumns = [
-              { name: 'driver_name', type: 'TEXT', default: "'N/A'" },
-              { name: 'updated_at', type: 'DATETIME', default: "CURRENT_TIMESTAMP" },
-              { name: 'empty_handling_location', type: 'TEXT' },
-              { name: 'start_time', type: 'TEXT' },
-              { name: 'end_date', type: 'TEXT' },
-              { name: 'end_time', type: 'TEXT' },
-              { name: 'agent_name', type: 'TEXT' } // NEW: agent_name migration
-            ];
-            newTripColumns.forEach(col => {
-              if (!existingColumns.has(col.name)) {
-                db.run(`ALTER TABLE trips ADD COLUMN ${col.name} ${col.type}${col.default ? ` DEFAULT ${col.default}` : ''}`, (alterErr) => {
-                  if (alterErr) console.error(`Error adding ${col.name} column to trips:`, alterErr.message);
-                  else console.log(`Added ${col.name} column to trips table.`);
-                });
+      //Trips Table
+      db.run(
+        `
+    CREATE TABLE IF NOT EXISTS trips (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+      start_date TEXT NOT NULL,
+      start_time TEXT,
+      end_date TEXT,
+      end_time TEXT,
+
+      car_no TEXT NOT NULL,
+
+      from_location TEXT NOT NULL,
+      to_location TEXT NOT NULL,
+
+      trip_type TEXT, 
+      cargo_load_type TEXT, 
+      cargo_load_date TEXT, 
+      cargo_load_time TEXT,
+      route_charge INTEGER,
+
+      empty_handling_location TEXT,
+      direction TEXT,
+      empty_pickup_dropoff_charge INTEGER,
+
+      overnight_status INTEGER,
+      overnight_total_charges INTEGER,
+      day_over_status INTEGER,
+      day_over_total_charges INTEGER,
+
+      point_change_locations TEXT, 
+      point_change_total_charges TEXT, 
+
+      remarks TEXT,
+      agent_name TEXT,
+      total_charge INTEGER,
+      
+      km_travelled INTEGER,
+      fuel_amount REAL DEFAULT 0,
+      fuel_cost INTEGER DEFAULT 0,
+      driver_name TEXT DEFAULT 'N/A',
+
+      is_manual_edited INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `,
+        (err) => {
+          if (err) console.error("Error creating trips table:", err.message);
+          else {
+            console.log("Trips table created or already exists.");
+            // Migration: Add columns that might be missing from older versions of the table
+            db.all(`PRAGMA table_info(trips)`, (err, columns) => {
+              if (err) {
+                console.error(
+                  "Error checking table info for trips:",
+                  err.message
+                );
+                return;
               }
+              const existingColumns = new Set(columns.map((col) => col.name));
+
+              // Define all columns that should exist, along with their default values where needed.
+              // This list should match the CREATE TABLE statement.
+              const allTripColumns = [
+                { name: "id", type: "INTEGER" },
+                { name: "start_date", type: "TEXT", notNull: true },
+                { name: "start_time", type: "TEXT" },
+                { name: "end_date", type: "TEXT" },
+                { name: "end_time", type: "TEXT" },
+                { name: "car_no", type: "TEXT", notNull: true },
+                { name: "from_location", type: "TEXT", notNull: true },
+                { name: "to_location", type: "TEXT", notNull: true },
+                { name: "trip_type", type: "TEXT" },
+                { name: "cargo_load_type", type: "TEXT" },
+                { name: "cargo_load_date", type: "TEXT" },
+                { name: "cargo_load_time", type: "TEXT" },
+                { name: "route_charge", type: "INTEGER" },
+                { name: "empty_handling_location", type: "TEXT" },
+                { name: "direction", type: "TEXT" },
+                { name: "empty_pickup_dropoff_charge", type: "INTEGER" },
+                { name: "overnight_status", type: "INTEGER" },
+                { name: "overnight_total_charges", type: "INTEGER" },
+                { name: "day_over_status", type: "INTEGER" },
+                { name: "day_over_total_charges", type: "INTEGER" },
+                { name: "point_change_locations", type: "TEXT" },
+                { name: "point_change_total_charges", type: "TEXT" },
+                { name: "remarks", type: "TEXT" },
+                { name: "agent_name", type: "TEXT" },
+                { name: "total_charge", type: "INTEGER" },
+                { name: "km_travelled", type: "INTEGER" },
+                { name: "fuel_amount", type: "REAL", default: "0" },
+                { name: "fuel_cost", type: "INTEGER", default: "0" },
+                { name: "driver_name", type: "TEXT", default: "'N/A'" },
+                { name: "is_manual_edited", type: "INTEGER", default: "0" },
+                {
+                  name: "created_at",
+                  type: "DATETIME",
+                  default: "CURRENT_TIMESTAMP",
+                },
+                {
+                  name: "updated_at",
+                  type: "DATETIME",
+                  default: "CURRENT_TIMESTAMP",
+                },
+              ];
+
+              // Check for any missing columns and add them
+              allTripColumns.forEach((col) => {
+                if (!existingColumns.has(col.name)) {
+                  let alterStatement = `ALTER TABLE trips ADD COLUMN ${col.name} ${col.type}`;
+                  if (col.notNull) {
+                    alterStatement += " NOT NULL";
+                  }
+                  if (col.default !== undefined) {
+                    alterStatement += ` DEFAULT ${col.default}`;
+                  }
+
+                  db.run(alterStatement, (alterErr) => {
+                    if (alterErr)
+                      console.error(
+                        `Error adding ${col.name} column to trips:`,
+                        alterErr.message
+                      );
+                    else
+                      console.log(`Added ${col.name} column to trips table.`);
+                  });
+                }
+              });
             });
-          });
+          }
         }
-      });
+      );
 
       // Car Maintenance Log Table
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS car_maintenance (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
@@ -99,13 +177,17 @@ const db = new sqlite3.Database(dbPath, (err) => {
           cost INTEGER NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-      `, (err) => {
-        if (err) console.error("Error creating car_maintenance table:", err.message);
-        else console.log("Car_maintenance table created or already exists.");
-      });
+      `,
+        (err) => {
+          if (err)
+            console.error("Error creating car_maintenance table:", err.message);
+          else console.log("Car_maintenance table created or already exists.");
+        }
+      );
 
       // Fuel Logs Table (for CarManagementPage - fuel fill-up records)
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS fuel_logs (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
@@ -115,30 +197,53 @@ const db = new sqlite3.Database(dbPath, (err) => {
           remarks TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-      `, (err) => {
-        if (err) console.error("Error creating fuel_logs table:", err.message);
-        else {
-          console.log("Fuel_logs table created or already exists.");
-          // Migration logic: If log_date exists but log_datetime doesn't, migrate data
-          db.all(`PRAGMA table_info(fuel_logs)`, async (err, columns) => {
-            if (err) { console.error("Error checking table info for fuel_logs:", err.message); return; }
-            const columnNames = columns.map(col => col.name);
-            const hasLogDate = columnNames.includes('log_date');
-            const hasLogDatetime = columnNames.includes('log_datetime');
-            if (hasLogDate && !hasLogDatetime) {
-              console.log("Migrating fuel_logs data: Adding log_datetime column and populating it.");
-              try {
-                await dbRun(`ALTER TABLE fuel_logs ADD COLUMN log_datetime TEXT`);
-                await dbRun(`UPDATE fuel_logs SET log_datetime = log_date || ' 00:00' WHERE log_datetime IS NULL`);
-                console.log("Fuel_logs migration to log_datetime completed.");
-              } catch (migrateErr) { console.error("Error during fuel_logs migration:", migrateErr.message); }
-            } else if (hasLogDatetime) { console.log("Fuel_logs table already has log_datetime."); }
-          });
+      `,
+        (err) => {
+          if (err)
+            console.error("Error creating fuel_logs table:", err.message);
+          else {
+            console.log("Fuel_logs table created or already exists.");
+            // Migration logic: If log_date exists but log_datetime doesn't, migrate data
+            db.all(`PRAGMA table_info(fuel_logs)`, async (err, columns) => {
+              if (err) {
+                console.error(
+                  "Error checking table info for fuel_logs:",
+                  err.message
+                );
+                return;
+              }
+              const columnNames = columns.map((col) => col.name);
+              const hasLogDate = columnNames.includes("log_date");
+              const hasLogDatetime = columnNames.includes("log_datetime");
+              if (hasLogDate && !hasLogDatetime) {
+                console.log(
+                  "Migrating fuel_logs data: Adding log_datetime column and populating it."
+                );
+                try {
+                  await dbRun(
+                    `ALTER TABLE fuel_logs ADD COLUMN log_datetime TEXT`
+                  );
+                  await dbRun(
+                    `UPDATE fuel_logs SET log_datetime = log_date || ' 00:00' WHERE log_datetime IS NULL`
+                  );
+                  console.log("Fuel_logs migration to log_datetime completed.");
+                } catch (migrateErr) {
+                  console.error(
+                    "Error during fuel_logs migration:",
+                    migrateErr.message
+                  );
+                }
+              } else if (hasLogDatetime) {
+                console.log("Fuel_logs table already has log_datetime.");
+              }
+            });
+          }
         }
-      });
+      );
 
       // Fuel Readings Table (for FuelConsumptionPage - consumption per trip)
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS fuel_readings (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
@@ -153,34 +258,89 @@ const db = new sqlite3.Database(dbPath, (err) => {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL
         );
-      `, (err) => {
-        if (err) console.error("Error creating fuel_readings table:", err.message);
-        else {
-          console.log("Fuel_readings table created or already exists.");
-          // Add new columns if they don't exist (for existing databases)
-          db.all(`PRAGMA table_info(fuel_readings)`, (err, columns) => {
-            if (err) { console.error("Error checking table info for fuel_readings:", err.message); return; }
-            const existingColumns = new Set(columns.map(col => col.name));
-            const newFuelReadingColumns = [
-              { name: 'previous_fuel_gauge_reading', type: 'REAL' },
-              { name: 'fuel_consumed_gallons', type: 'REAL' },
-              { name: 'km_per_gallon', type: 'REAL' }
-            ];
-            newFuelReadingColumns.forEach(col => {
-              if (!existingColumns.has(col.name)) {
-                db.run(`ALTER TABLE fuel_readings ADD COLUMN ${col.name} ${col.type}`, (alterErr) => {
-                  if (alterErr) console.error(`Error adding ${col.name} column to fuel_readings:`, alterErr.message);
-                  else console.log(`Added ${col.name} column to fuel_readings table.`);
-                });
+      `,
+        (err) => {
+          if (err)
+            console.error("Error creating fuel_readings table:", err.message);
+          else {
+            console.log("Fuel_readings table created or already exists.");
+            // Add new columns if they don't exist (for existing databases)
+            db.all(`PRAGMA table_info(fuel_readings)`, (err, columns) => {
+              if (err) {
+                console.error(
+                  "Error checking table info for fuel_readings:",
+                  err.message
+                );
+                return;
               }
+              const existingColumns = new Set(columns.map((col) => col.name));
+              const newFuelReadingColumns = [
+                { name: "previous_fuel_gauge_reading", type: "REAL" },
+                { name: "fuel_consumed_gallons", type: "REAL" },
+                { name: "km_per_gallon", type: "REAL" },
+              ];
+              newFuelReadingColumns.forEach((col) => {
+                if (!existingColumns.has(col.name)) {
+                  db.run(
+                    `ALTER TABLE fuel_readings ADD COLUMN ${col.name} ${col.type}`,
+                    (alterErr) => {
+                      if (alterErr)
+                        console.error(
+                          `Error adding ${col.name} column to fuel_readings:`,
+                          alterErr.message
+                        );
+                      else
+                        console.log(
+                          `Added ${col.name} column to fuel_readings table.`
+                        );
+                    }
+                  );
+                }
+              });
             });
-          });
+          }
         }
-      });
+      );
+
+      // Agent Names Table (for storing agent names)
+      db.run(
+        `
+          CREATE TABLE IF NOT EXISTS AgentNames (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `,
+        (err) => {
+          if (err) console.error("Error creating AgentNames table:", err.message);
+          else {
+            console.log("AgentNames table created or already exists.");
+            // Insert a dummy agent if not exists
+            const dummyAgents = ["ကိုစိုင်း", "ကိုရာဇာ", "ကျော်သူနိုင်"]; // Updated dummy data
+            dummyAgents.forEach(agentName => {
+            db.run(
+              `INSERT OR IGNORE INTO AgentNames (name) VALUES (?)`,
+              [agentName], // အေးဂျင့်အမည်
+              function (insertErr) {
+                if (insertErr) {
+                  console.error("Error inserting dummy agent:", insertErr.message);
+                } else if (this.changes > 0) {
+                  console.log(`Dummy agent ${agentName} inserted.`);
+                } else {
+                  console.log(`Dummy agent '${agentName}' already exists.`);
+                }
+              }
+            );
+          });
+          }
+        }
+      );
 
 
       // Drivers Table (for storing driver names and salaries)
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS drivers (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL UNIQUE,
@@ -188,13 +348,32 @@ const db = new sqlite3.Database(dbPath, (err) => {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-      `, (err) => {
-        if (err) console.error("Error creating drivers table:", err.message);
-        else console.log("Drivers table created or already exists.");
-      });
+      `,
+        (err) => {
+          if (err) console.error("Error creating drivers table:", err.message);
+          else {
+            console.log("Drivers table created or already exists.");
+            // Insert a dummy driver if not exists
+            db.run(
+              `INSERT OR IGNORE INTO drivers (name) VALUES (?)`,
+              ["John Doe"], // ယာဉ်မောင်းအမည်
+              function (insertErr) {
+                if (insertErr) {
+                  console.error("Error inserting dummy driver:", insertErr.message);
+                } else if (this.changes > 0) {
+                  console.log("Dummy driver 'John Doe' inserted.");
+                } else {
+                  console.log("Dummy driver 'John Doe' already exists.");
+                }
+              }
+            );
+          }
+        }
+      );
 
       // Driver Salary History Table
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS driver_salary_history (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           driver_id INTEGER NOT NULL,
@@ -205,14 +384,23 @@ const db = new sqlite3.Database(dbPath, (err) => {
           FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
           UNIQUE (driver_id, effective_start_date)
         )
-      `, (err) => {
-        if (err) console.error("Error creating driver_salary_history table:", err.message);
-        else console.log("Driver_salary_history table created or already exists.");
-      });
-
+      `,
+        (err) => {
+          if (err)
+            console.error(
+              "Error creating driver_salary_history table:",
+              err.message
+            );
+          else
+            console.log(
+              "Driver_salary_history table created or already exists."
+            );
+        }
+      );
 
       // Settings Table (for configurable amounts like overnight/dayover charges)
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS settings (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           setting_key TEXT NOT NULL UNIQUE,
@@ -220,22 +408,43 @@ const db = new sqlite3.Database(dbPath, (err) => {
           description TEXT,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-      `, (err) => {
-        if (err) console.error("Error creating settings table:", err.message);
-        else {
-          console.log("Settings table created or already exists.");
-          // Default settings (only insert if not exists)
-          db.run(`INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
-            ['overnight_dayover_combined_charge', '200000', 'Combined charge for overnight stay with cargo AND day over/delayed']);
-          db.run(`INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
-            ['gep_overnight_charge', '80000', 'Overnight charge for GEP gate cars']);
-          db.run(`INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
-            ['9k_overnight_charge', '80000', 'Overnight Charge for 9K gate cars']);
+      `,
+        (err) => {
+          if (err) console.error("Error creating settings table:", err.message);
+          else {
+            console.log("Settings table created or already exists.");
+            // Default settings (only insert if not exists)
+            db.run(
+              `INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
+              [
+                "overnight_dayover_combined_charge",
+                "200000",
+                "Combined charge for overnight stay with cargo AND day over/delayed",
+              ]
+            );
+            db.run(
+              `INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
+              [
+                "gep_overnight_charge",
+                "80000",
+                "Overnight charge for GEP gate cars",
+              ]
+            );
+            db.run(
+              `INSERT OR IGNORE INTO settings (setting_key, setting_value, description) VALUES (?, ?, ?)`,
+              [
+                "9k_overnight_charge",
+                "80000",
+                "Overnight Charge for 9K gate cars",
+              ]
+            );
+          }
         }
-      });
+      );
 
       // Route Charges Versioning Table
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS route_charges_versions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           effective_date TEXT NOT NULL,
@@ -244,52 +453,121 @@ const db = new sqlite3.Database(dbPath, (err) => {
           route_data TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-      `, (err) => {
-        if (err) console.error("Error creating route_charges_versions table:", err.message);
-        else {
-          console.log("Route_charges_versions table created or already exists.");
+      `,
+        (err) => {
+          if (err)
+            console.error(
+              "Error creating route_charges_versions table:",
+              err.message
+            );
+          else {
+            console.log(
+              "Route_charges_versions table created or already exists."
+            );
 
-          // Add new columns if they don't exist (for existing databases)
-          db.all(`PRAGMA table_info(route_charges_versions)`, (err, columns) => {
-            if (err) { console.error("Error checking table info for route_charges_versions:", err.message); return; }
-            const existingColumnNames = new Set(columns.map(col => col.name));
-            if (!existingColumnNames.has('version_number')) {
-              db.run(`ALTER TABLE route_charges_versions ADD COLUMN version_number TEXT`, (alterErr) => {
-                if (alterErr) console.error("Error adding version_number column to route_charges_versions:", alterErr.message);
-                else console.log("Added version_number column to route_charges_versions table.");
-              });
-            }
-            if (!existingColumnNames.has('end_date')) {
-              db.run(`ALTER TABLE route_charges_versions ADD COLUMN end_date TEXT`, (alterErr) => {
-                if (alterErr) console.error("Error adding end_date column to route_charges_versions:", alterErr.message);
-                else console.log("Added end_date column to route_charges_versions table.");
-              });
-            }
-            // Check if there's any data, if not, insert initial from static JSON
-            db.get(`SELECT COUNT(*) AS count FROM route_charges_versions`, [], (err, row) => {
-              if (err) { console.error("Error checking route charges versions table count:", err.message); return; }
-              if (row.count === 0) { // If table is completely empty, insert initial data
-                try {
-                  const initialRouteCharges = require(path.resolve(__dirname, '../myan-san/src/data/routeCharges.json'));
-                  const initialRouteData = JSON.stringify(initialRouteCharges);
-                  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-
-                  db.run(`INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data) VALUES (?, ?, ?, ?)`,
-                    [today, null, '1.0', initialRouteData], // Initial version is 1.0, active (end_date NULL)
-                    function (err) {
-                      if (err) { console.error("Error inserting initial route charges version:", err.message); }
-                      else { console.log(`Initial route charges version inserted with ID: ${this.lastID} and Version: 1.0`); }
+            // Add new columns if they don't exist (for existing databases)
+            db.all(
+              `PRAGMA table_info(route_charges_versions)`,
+              (err, columns) => {
+                if (err) {
+                  console.error(
+                    "Error checking table info for route_charges_versions:",
+                    err.message
+                  );
+                  return;
+                }
+                const existingColumnNames = new Set(
+                  columns.map((col) => col.name)
+                );
+                if (!existingColumnNames.has("version_number")) {
+                  db.run(
+                    `ALTER TABLE route_charges_versions ADD COLUMN version_number TEXT`,
+                    (alterErr) => {
+                      if (alterErr)
+                        console.error(
+                          "Error adding version_number column to route_charges_versions:",
+                          alterErr.message
+                        );
+                      else
+                        console.log(
+                          "Added version_number column to route_charges_versions table."
+                        );
                     }
                   );
-                } catch (e) { console.error("Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:", e.message); }
+                }
+                if (!existingColumnNames.has("end_date")) {
+                  db.run(
+                    `ALTER TABLE route_charges_versions ADD COLUMN end_date TEXT`,
+                    (alterErr) => {
+                      if (alterErr)
+                        console.error(
+                          "Error adding end_date column to route_charges_versions:",
+                          alterErr.message
+                        );
+                      else
+                        console.log(
+                          "Added end_date column to route_charges_versions table."
+                        );
+                    }
+                  );
+                }
+                // Check if there's any data, if not, insert initial from static JSON
+                db.get(
+                  `SELECT COUNT(*) AS count FROM route_charges_versions`,
+                  [],
+                  (err, row) => {
+                    if (err) {
+                      console.error(
+                        "Error checking route charges versions table count:",
+                        err.message
+                      );
+                      return;
+                    }
+                    if (row.count === 0) {
+                      // If table is completely empty, insert initial data
+                      try {
+                        const initialRouteCharges = require(path.resolve(
+                          __dirname,
+                          "../myan-san/src/data/routeCharges.json"
+                        ));
+                        const initialRouteData =
+                          JSON.stringify(initialRouteCharges);
+                        const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+                        db.run(
+                          `INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data) VALUES (?, ?, ?, ?)`,
+                          [today, null, "1.0", initialRouteData], // Initial version is 1.0, active (end_date NULL)
+                          function (err) {
+                            if (err) {
+                              console.error(
+                                "Error inserting initial route charges version:",
+                                err.message
+                              );
+                            } else {
+                              console.log(
+                                `Initial route charges version inserted with ID: ${this.lastID} and Version: 1.0`
+                              );
+                            }
+                          }
+                        );
+                      } catch (e) {
+                        console.error(
+                          "Could not load initial route charges from JSON. Ensure path is correct and file exists. Error:",
+                          e.message
+                        );
+                      }
+                    }
+                  }
+                );
               }
-            });
-          });
+            );
+          }
         }
-      });
+      );
 
       // Empty Charges Versioning Table
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS empty_charges_versions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           effective_date TEXT NOT NULL,
@@ -298,51 +576,112 @@ const db = new sqlite3.Database(dbPath, (err) => {
           empty_charge_data TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-      `, (err) => {
-        if (err) console.error("Error creating empty_charges_versions table:", err.message);
-        else {
-          console.log("Empty_charges_versions table created or already exists.");
+      `,
+        (err) => {
+          if (err)
+            console.error(
+              "Error creating empty_charges_versions table:",
+              err.message
+            );
+          else {
+            console.log(
+              "Empty_charges_versions table created or already exists."
+            );
 
-          // Add new columns if they don't exist (for existing databases)
-          db.all(`PRAGMA table_info(empty_charges_versions)`, (err, columns) => {
-            if (err) { console.error("Error checking table info for empty_charges_versions:", err.message); return; }
-            const existingColumnNames = new Set(columns.map(col => col.name));
-            if (!existingColumnNames.has('version_number')) {
-              db.run(`ALTER TABLE empty_charges_versions ADD COLUMN version_number TEXT`, (alterErr) => {
-                if (alterErr) console.error("Error adding version_number column to empty_charges_versions:", alterErr.message);
-                else console.log("Added version_number column to empty_charges_versions table.");
-              });
-            }
-            if (!existingColumnNames.has('end_date')) {
-              db.run(`ALTER TABLE empty_charges_versions ADD COLUMN end_date TEXT`, (alterErr) => {
-                if (alterErr) console.error("Error adding end_date column to empty_charges_versions:", alterErr.message);
-                else console.log("Added end_date column to empty_charges_versions table.");
-              });
-            }
+            // Add new columns if they don't exist (for existing databases)
+            db.all(
+              `PRAGMA table_info(empty_charges_versions)`,
+              (err, columns) => {
+                if (err) {
+                  console.error(
+                    "Error checking table info for empty_charges_versions:",
+                    err.message
+                  );
+                  return;
+                }
+                const existingColumnNames = new Set(
+                  columns.map((col) => col.name)
+                );
+                if (!existingColumnNames.has("version_number")) {
+                  db.run(
+                    `ALTER TABLE empty_charges_versions ADD COLUMN version_number TEXT`,
+                    (alterErr) => {
+                      if (alterErr)
+                        console.error(
+                          "Error adding version_number column to empty_charges_versions:",
+                          alterErr.message
+                        );
+                      else
+                        console.log(
+                          "Added version_number column to empty_charges_versions table."
+                        );
+                    }
+                  );
+                }
+                if (!existingColumnNames.has("end_date")) {
+                  db.run(
+                    `ALTER TABLE empty_charges_versions ADD COLUMN end_date TEXT`,
+                    (alterErr) => {
+                      if (alterErr)
+                        console.error(
+                          "Error adding end_date column to empty_charges_versions:",
+                          alterErr.message
+                        );
+                      else
+                        console.log(
+                          "Added end_date column to empty_charges_versions table."
+                        );
+                    }
+                  );
+                }
 
-            // Initial insert of empty charges data if the table is empty
-            db.get(`SELECT COUNT(*) AS count FROM empty_charges_versions`, [], (err, row) => {
-              if (err) { console.error("Error checking empty charges versions table count:", err.message); return; }
-              if (row.count === 0) { // If table is completely empty, insert initial data
-                const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-                const emptyChargeDataString = JSON.stringify(initialEmptyChargeData); 
+                // Initial insert of empty charges data if the table is empty
+                db.get(
+                  `SELECT COUNT(*) AS count FROM empty_charges_versions`,
+                  [],
+                  (err, row) => {
+                    if (err) {
+                      console.error(
+                        "Error checking empty charges versions table count:",
+                        err.message
+                      );
+                      return;
+                    }
+                    if (row.count === 0) {
+                      // If table is completely empty, insert initial data
+                      const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+                      const emptyChargeDataString = JSON.stringify(
+                        initialEmptyChargeData
+                      );
 
-                db.run(`INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data) VALUES (?, ?, ?, ?)`,
-                  [today, null, '1.0', emptyChargeDataString], // Initial version is 1.0, active (end_date NULL)
-                  function (err) {
-                    if (err) { console.error("Error inserting initial empty charges version:", err.message); }
-                    else { console.log(`Initial empty charges version inserted with ID: ${this.lastID} and Version: 1.0`); }
+                      db.run(
+                        `INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data) VALUES (?, ?, ?, ?)`,
+                        [today, null, "1.0", emptyChargeDataString], // Initial version is 1.0, active (end_date NULL)
+                        function (err) {
+                          if (err) {
+                            console.error(
+                              "Error inserting initial empty charges version:",
+                              err.message
+                            );
+                          } else {
+                            console.log(
+                              `Initial empty charges version inserted with ID: ${this.lastID} and Version: 1.0`
+                            );
+                          }
+                        }
+                      );
+                    }
                   }
                 );
               }
-            });
-          });
+            );
+          }
         }
-      });
-
+      );
 
       // Car Driver Assignments Table
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS car_driver_assignments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
@@ -352,26 +691,42 @@ const db = new sqlite3.Database(dbPath, (err) => {
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE CASCADE
         )
-      `, (err) => {
-        if (err) console.error("Error creating car_driver_assignments table:", err.message);
-        else {
-          console.log("Car_driver_assignments table created or already exists.");
-          // Add end_date column if it doesn't exist (for existing databases)
-          db.all(`PRAGMA table_info(car_driver_assignments)`, (err, columns) => {
-            if (err) { console.error("Error checking table info for car_driver_assignments:", err.message); return; }
-            const endDateExists = columns.some(col => col.name === 'end_date');
-            if (!endDateExists) {
-              db.run(`ALTER TABLE car_driver_assignments ADD COLUMN end_date TEXT`, (err) => {
-                if (err) console.error("Error adding end_date column to car_driver_assignments:", alterErr.message);
-                else console.log("Added end_date column to car_driver_assignments table.");
-              });
-            }
-          });
+      `,
+        (err) => {
+          if (err)
+            console.error(
+              "Error creating car_driver_assignments table:",
+              err.message
+            );
+          else {
+            console.log("car_driver_assignments table created or already exists.");
+
+            // Insert dummy data into car_driver_assignments
+            const dummyCarNo = "6G-8202";
+            const dummyDriverName = "John Doe"; // drivers table ထဲက driver name နဲ့ တူရပါမယ်
+            const dummyAssignedDate = "2024-07-01"; // စတင်သတ်မှတ်သည့်ရက်စွဲ
+            const dummyEndDate = null; // လက်ရှိ assign လုပ်ထားဆဲဖြစ်ပါက null
+
+            db.run(
+              `INSERT OR IGNORE INTO car_driver_assignments (car_no, driver_name, assigned_date, end_date) VALUES (?, ?, ?, ?)`,
+              [dummyCarNo, dummyDriverName, dummyAssignedDate, dummyEndDate],
+              function (insertErr) {
+                if (insertErr) {
+                  console.error("Error inserting dummy assignment:", insertErr.message);
+                } else if (this.changes > 0) {
+                  console.log(`Dummy assignment for Car ${dummyCarNo} and Driver ${dummyDriverName} inserted.`);
+                } else {
+                  console.log(`Dummy assignment for Car ${dummyCarNo} and Driver ${dummyDriverName} already exists.`);
+                }
+              }
+            );
+          }
         }
-      });
+      );
 
       // General Expenses Table
-      db.run(`
+      db.run(
+        `
         CREATE TABLE IF NOT EXISTS general_expenses (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           car_no TEXT NOT NULL,
@@ -381,10 +736,16 @@ const db = new sqlite3.Database(dbPath, (err) => {
           remarks TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-      `, (err) => {
-        if (err) console.error("Error creating general_expenses table:", err.message);
-        else console.log("General_expenses table created or already exists.");
-      });
+      `,
+        (err) => {
+          if (err)
+            console.error(
+              "Error creating general_expenses table:",
+              err.message
+            );
+          else console.log("General_expenses table created or already exists.");
+        }
+      );
     });
   }
 });
@@ -414,7 +775,8 @@ const dbAll = (query, params = []) => {
   });
 };
 
-const dbGet = (query, params = []) => { // New helper for single row queries
+const dbGet = (query, params = []) => {
+  // New helper for single row queries
   return new Promise((resolve, reject) => {
     db.get(query, params, (err, row) => {
       if (err) {
@@ -426,50 +788,75 @@ const dbGet = (query, params = []) => { // New helper for single row queries
   });
 };
 
-
 // Test API Endpoint
-app.get('/', (req, res) => {
-  res.send('Backend server is running!');
+app.get("/", (req, res) => {
+  res.send("Backend server is running!");
 });
 
 // API endpoint to get all trips
-app.get('/api/trips', async (req, res) => {
+app.get("/api/trips", async (req, res) => {
   // Added pagination, filtering, and sorting for trips
-  const { page = 1, limit = 10, carNo, month, year, from, to, sortBy = 'date', sortOrder = 'desc' } = req.query;
+  const {
+    page = 1,
+    limit = 10,
+    carNo,
+    month,
+    year,
+    from,
+    to,
+    sortBy = "start_date", // Corrected default sorting column
+    sortOrder = "desc",
+  } = req.query;
   const offset = (page - 1) * limit;
 
   let whereClauses = [];
   let params = [];
 
   if (carNo) {
-    whereClauses.push('car_no = ?');
+    whereClauses.push("car_no = ?");
     params.push(carNo);
   }
   if (month && year) {
-    whereClauses.push("strftime('%Y-%m', date) = ?");
-    params.push(`${year}-${String(month).padStart(2, '0')}`);
+    whereClauses.push("strftime('%Y-%m', start_date) = ?"); // Corrected 'date' to 'start_date'
+    params.push(`${year}-${String(month).padStart(2, "0")}`);
   } else if (year) {
-    whereClauses.push("strftime('%Y', date) = ?");
+    whereClauses.push("strftime('%Y', start_date) = ?"); // Corrected 'date' to 'start_date'
     params.push(year);
   }
   if (from) {
-    whereClauses.push('from_location LIKE ?');
+    whereClauses.push("from_location LIKE ?");
     params.push(`%${from}%`);
   }
   if (to) {
-    whereClauses.push('to_location LIKE ?');
+    whereClauses.push("to_location LIKE ?");
     params.push(`%${to}%`);
   }
 
-  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const whereSql =
+    whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
   // Ensure sorting by date and time correctly
-  const validSortColumns = ['date', 'start_time', 'car_no', 'from_location', 'to_location', 'route_charge', 'km_travelled'];
-  const orderBy = validSortColumns.includes(sortBy) ? sortBy : 'date';
-  const order = (sortOrder && (sortOrder.toLowerCase() === 'asc' || sortOrder.toLowerCase() === 'desc')) ? sortOrder.toUpperCase() : 'DESC';
+  const validSortColumns = [
+    "start_date",
+    "start_time",
+    "car_no",
+    "from_location",
+    "to_location",
+    "route_charge",
+    "km_travelled",
+  ];
+  const orderBy = validSortColumns.includes(sortBy) ? sortBy : "start_date"; // Corrected default sorting column
+  const order =
+    sortOrder &&
+      (sortOrder.toLowerCase() === "asc" || sortOrder.toLowerCase() === "desc")
+      ? sortOrder.toUpperCase()
+      : "DESC";
 
   try {
-    const totalCountRow = await dbGet(`SELECT COUNT(*) as count FROM trips ${whereSql}`, params);
+    const totalCountRow = await dbGet(
+      `SELECT COUNT(*) as count FROM trips ${whereSql}`,
+      params
+    );
     const totalCount = totalCountRow.count;
 
     const trips = await dbAll(
@@ -482,94 +869,127 @@ app.get('/api/trips', async (req, res) => {
   }
 });
 
-
 // API endpoint to add a new trip
-app.post('/api/trips', async (req, res) => {
+app.post("/api/trips", async (req, res) => {
+  // Destructure request body variables, renaming to match database column names
   let {
-    date, //1
-    startTime, //2
-    endDate, //3 
-    endTime, //4
-    carNo, //5
-    from_location, //6
-    to_location, //7
-    routeCharge, //8
-    empty_pickup_dropoff_charge, //9
-    empty_handling_location,//10
-    overnight_status, //11
-    overnight_charges, //12
-    day_over_status, //13
-    day_over_charges, //14
-    remarks, //15
-    agent_name, //16
-    total_charge, //17
-    km_travelled, //18
-    fuel_amount, //19
-    fuel_cost, // 20
-    is_manual_edited, //21
-    driverName, //22
+    start_date,                      // 1: ခရီးစတင်တဲ့ရက်စွဲ (YYYY-MM-DD)
+    start_time,                      // 2: ခရီးစတင်တဲ့အချိန် (HH:MM:SS)
+    end_date,                        // 3: ခရီးပြီးဆုံးတဲ့ရက်စွဲ (YYYY-MM-DD)
+    end_time,                        // 4: ခရီးပြီးဆုံးတဲ့အချိန် (HH:MM:SS)
+    car_no,                          // 5: ကားနံပါတ် (ဥပမာ: GEP-XXXX)
+    from_location,                   // 6: ခရီးစတင်တဲ့နေရာ
+    to_location,                     // 7: ခရီးပြီးဆုံးတဲ့နေရာ
+    trip_type,                       // 8: ပုံမှန်၊ တင်စစ်၊ ပွိုင့်ပျက်
+    cargo_load_type,                 // 9: ပုံမှန်၊ပတ်မောင်း၊ ရက်ကြာ
+    cargo_load_date,                 // 10: ကုန်တင်တဲ့ရက်စွဲ
+    cargo_load_time,                 // 11: ကုန်တင်တဲ့အချိန်
+    route_charge,                    // 12: ပုံမှန်ခရီးအတွက် ဝန်ဆောင်ခ
+    empty_handling_location,         // 13: အခွံတင်/ချ နေရာ
+    direction,                       // 14: ခရီးသွားလာမှု ဦးတည်ချက်
+    empty_pickup_dropoff_charge,     // 15: အခွံတင်/ချ ဝန်ဆောင်ခ
+    overnight_status,                // 16: အသားအိပ် ည များ
+    overnight_total_charges,         // 17: အသားအိပ် ည ထပ်ဆောင်းဝန်ဆောင်ခ
+    day_over_status,                 // 18: နေ့ကျော် ရက် များ
+    day_over_total_charges,          // 19: နေ့ကျော် ရက်များအတွက် ထပ်ဆောင်း
+    point_change_locations,          // 20: နေရာပြောင်းလဲမှုများ (JSON string)
+    point_change_total_charges,      // 21: နေရာပြောင်းလဲမှုအတွက် စုစုပေါင်းဝန်ဆောင်ခ
+    remarks,                         // 22: မှတ်ချက်
+    agent_name,                      // 23: ကိုယ်စားလှယ်အမည်
+    total_charge,                    // 24: ခရီးစဉ်တစ်ခုလုံးရဲ့ စုစုပေါင်း ဝန်ဆောင်ခ
+    km_travelled,                    // 25: ခရီးအကွာအဝေး (ကီလိုမီတာ)
+    fuel_amount,                     // 26: အသုံးပြုခဲ့တဲ့ ဆီပမာဏ
+    fuel_cost,                       // 27: အသုံးပြုခဲ့တဲ့ ဆီဖိုး
+    driver_name,                     // 28: ယာဉ်မောင်းအမည်
+    is_manual_edited,                // 29: လက်ဖြင့် ပြင်ဆင်ထားခြင်းရှိ/မရှိ (1/0)
   } = req.body;
 
-  if (!date || !startTime || !endDate || !endTime || !carNo || !from_location || !to_location || !driverName) {
-    return res.status(400).json({ error: "Missing required trip fields (date, startTime, endDate, endTime, carNo, from, to, driverName)." });
+  // Required fields validation based on CREATE TABLE's NOT NULL constraints
+  if (
+    !start_date ||
+    !car_no ||
+    !from_location ||
+    !to_location
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "Missing required trip fields (start_date, car_no, from_location, to_location).",
+      });
   }
 
-  console.log("Car No",carNo);
-  console.log("Agent Name",agent_name);
-
   try {
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       INSERT INTO trips (
-          date,                      -- 1: ခရီးစတင်တဲ့ရက်စွဲ (YYYY-MM-DD)
-          start_time,                -- 2: ခရီးစတင်တဲ့အချိန် (HH:MM:SS)
-          end_date,                  -- 3: ခရီးပြီးဆုံးတဲ့ရက်စွဲ (YYYY-MM-DD)
-          end_time,                  -- 4: ခရီးပြီးဆုံးတဲ့အချိန် (HH:MM:SS)
-          car_no,                    -- 5: ကားနံပါတ် (ဥပမာ: GEP-XXXX)
-          from_location,             -- 6: ခရီးစတင်တဲ့နေရာ
-          to_location,               -- 7: ခရီးပြီးဆုံးတဲ့နေရာ
-          route_charge,              -- 8: ပုံမှန်ခရီးအတွက် ဝန်ဆောင်ခ
-          empty_pickup_dropoff_charge, -- 9: အခွံတင်/ချ ဝန်ဆောင်ခ
-          empty_handling_location,   -- 10: အခွံတင်/ချ နေရာ
-          overnight_status,          -- 11: ညအိပ်ခရီးဟုတ်/မဟုတ် (yes/no)
-          overnight_charges,         -- 12: ညအိပ်ခရီးအတွက် ထပ်ဆောင်းဝန်ဆောင်ခ
-          day_over_status,           -- 13: ရက်ကျော်ခရီးဟုတ်/မဟုတ် (yes/no)
-          day_over_charges,          -- 14: ရက်ကျော်ခရီးအတွက် ထပ်ဆောင်းဝန်ဆောင်ခ
-          remarks,                   -- 15: မှတ်ချက်
-          agent_name,                -- 16: ကိုယ်စားလှယ်အမည်
-          total_charge,              -- 17: ခရီးစဉ်တစ်ခုလုံးရဲ့ စုစုပေါင်း ဝန်ဆောင်ခ
-          km_travelled,              -- 18: ခရီးအကွာအဝေး (ကီလိုမီတာ)
-          fuel_amount,               -- 19: အသုံးပြုခဲ့တဲ့ ဆီပမာဏ
-          fuel_cost,                 -- 20: အသုံးပြုခဲ့တဲ့ ဆီဖိုး
-          driver_name,               -- 21: ယာဉ်မောင်းအမည်
-          is_manual_edited           -- 22: လက်ဖြင့် ပြင်ဆင်ထားခြင်းရှိ/မရှိ (1/0)
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      date, //1
-      startTime, //2
-      endDate, //3
-      endTime, //4
-      carNo, //5
-      from_location, //6
-      to_location, //7
-      routeCharge, //8
-      empty_pickup_dropoff_charge, //9
-      empty_handling_location,//10
-      overnight_status, //11
-      overnight_charges,//12
-      day_over_status, //13
-      day_over_charges, //14
-      remarks, //15
-      agent_name, //16
-      total_charge, //17
-      km_travelled, //18
-      0, //19
-      0, //20
-      driverName, //21
-      is_manual_edited //22
-    ]);
+          start_date,
+          start_time,
+          end_date,
+          end_time,
+          car_no,
+          from_location,
+          to_location,
+          trip_type,
+          cargo_load_type,
+          cargo_load_date,
+          cargo_load_time,
+          route_charge,
+          empty_handling_location,
+          direction,
+          empty_pickup_dropoff_charge,
+          overnight_status,
+          overnight_total_charges,
+          day_over_status,
+          day_over_total_charges,
+          point_change_locations,
+          point_change_total_charges,
+          remarks,
+          agent_name,
+          total_charge,
+          km_travelled,
+          fuel_amount,
+          fuel_cost,
+          driver_name,
+          is_manual_edited
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      [
+        start_date,
+        start_time, // Optional
+        end_date,    // Optional
+        end_time,    // Optional
+        car_no,
+        from_location,
+        to_location,
+        trip_type,   // Optional
+        cargo_load_type, // Optional
+        cargo_load_date, // Optional
+        cargo_load_time, // Optional
+        route_charge, // Optional
+        empty_handling_location, // Optional
+        direction,   // Optional
+        empty_pickup_dropoff_charge, // Optional
+        overnight_status, // Default to 0 if not provided
+        overnight_total_charges, // Default to 0 if not provided
+        day_over_status, // Default to 0 if not provided
+        day_over_total_charges, // Default to 0 if not provided
+        // For point_change_locations, ensure it's a JSON string if provided, otherwise null
+        point_change_locations = Array.isArray(point_change_locations) ? JSON.stringify(point_change_locations) : null, // Optional, handle as JSON string
+        point_change_total_charges, // Optional
+        remarks,     // Optional
+        agent_name,  // Optional
+        total_charge, // Optional
+        km_travelled, // Optional
+        fuel_amount || 0,    // Default to 0 as per table
+        fuel_cost || 0,      // Default to 0 as per table
+        driver_name || 'N/A', // Default to 'N/A' as per table
+        is_manual_edited || 0, // Default to 0 as per table
+      ]
+    );
     res.status(201).json({
       message: "Trip added successfully",
-      tripId: result.id
+      tripId: result.lastID, // SQLite's db.run returns lastID for auto-incremented primary key
     });
   } catch (err) {
     console.error("Error inserting trip:", err.message);
@@ -578,70 +998,155 @@ app.post('/api/trips', async (req, res) => {
 });
 
 // API endpoint to update a trip (PUT /api/trips/:id)
-app.put('/api/trips/:id', async (req, res) => {
+app.put("/api/trips/:id", async (req, res) => {
   const { id } = req.params;
   let {
-    date, startTime, endDate, endTime,
-    carNo, from_location, to_location, routeCharge,
-    empty_pickup_charge, empty_dropoff_charge,
+    start_date,
+    start_time,
+    end_date,
+    end_time,
+    car_no,
+    from_location,
+    to_location,
+    trip_type,
+    cargo_load_type,
+    cargo_load_date,
+    cargo_load_time,
+    route_charge,
     empty_handling_location,
-    overnight_status, day_over_status,
-    remarks, agent_name, // NEW: agent_name
-    total_charge, km_travelled, is_manual_edited, driverName
+    direction,
+    empty_pickup_dropoff_charge,
+    overnight_status,
+    overnight_total_charges,
+    day_over_status,
+    day_over_total_charges,
+    point_change_locations,
+    point_change_total_charges,
+    remarks,
+    agent_name,
+    total_charge,
+    km_travelled,
+    fuel_amount,
+    fuel_cost,
+    driver_name,
+    is_manual_edited,
   } = req.body;
 
-  if (!date || !startTime || !endDate || !endTime || !carNo || !from_location || !to_location || !driverName) {
-    return res.status(400).json({ error: "Missing required trip fields for update." });
+  // Required fields validation based on CREATE TABLE's NOT NULL constraints
+  if (
+    !start_date ||
+    !car_no ||
+    !from_location ||
+    !to_location
+  ) {
+    return res
+      .status(400)
+      .json({ error: "Missing required trip fields for update." });
   }
 
-  // Recalculate empty charges if not manually edited
-  if (!is_manual_edited) {
-    if (empty_handling_location) {
-      const emptyChargeResult = await calculateEmptyCharge(from_location, to_location, empty_handling_location, date);
-      empty_pickup_charge = 0; // Reset before setting
-      empty_dropoff_charge = 0; // Reset before setting
-      if (emptyChargeResult.type === 'pickup') {
-        empty_pickup_charge = emptyChargeResult.charge;
-      } else if (emptyChargeResult.type === 'dropoff') {
-        empty_dropoff_charge = emptyChargeResult.charge;
-      }
-      total_charge = (routeCharge || 0) + empty_pickup_charge + empty_dropoff_charge;
-    } else {
-      empty_pickup_charge = 0;
-      empty_dropoff_charge = 0;
-      total_charge = (routeCharge || 0);
-    }
+  // Recalculate empty charges if not manually edited (assuming calculateEmptyCharge is defined)
+  // Note: The logic for empty_pickup_charge and empty_dropoff_charge was removed
+  // as the table only has empty_pickup_dropoff_charge.
+  // You might need to adjust calculateEmptyCharge to return a single charge value
+  // or rethink how empty charges are stored if they are indeed separate.
+  if (!is_manual_edited && empty_handling_location) {
+    // This part assumes calculateEmptyCharge is a function that returns the combined charge
+    // for empty_pickup_dropoff_charge based on locations and date.
+    // You'll need to implement or adjust `calculateEmptyCharge` accordingly.
+    // For now, we'll just use the provided empty_pickup_dropoff_charge or default to 0.
+    // If you need complex recalculation, ensure `calculateEmptyCharge` exists and works as expected.
+    // For simplicity, if not manually edited, we'll assume empty_pickup_dropoff_charge
+    // is either provided or defaults to 0, and total_charge is computed.
+    // If you need to *recalculate* based on `calculateEmptyCharge`, you'd call it here.
+    // Example:
+    // const emptyChargeResult = await calculateEmptyCharge(from_location, to_location, empty_handling_location, start_date);
+    // empty_pickup_dropoff_charge = emptyChargeResult.charge;
+    // total_charge = (route_charge || 0) + (empty_pickup_dropoff_charge || 0) + (overnight_total_charges || 0) + (day_over_total_charges || 0);
   }
-  // If is_manual_edited is true, then empty_pickup_charge, empty_dropoff_charge, and total_charge
-  // should be used as provided in req.body. No recalculation.
+
+  // If is_manual_edited is true, then total_charge should be used as provided in req.body.
+  // Otherwise, recalculate based on available charges.
+  if (!is_manual_edited) {
+    total_charge = (route_charge || 0) + (empty_pickup_dropoff_charge || 0) + (overnight_total_charges || 0) + (day_over_total_charges || 0);
+  }
 
 
   try {
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       UPDATE trips SET
-        date = ?, start_time = ?, end_date = ?, end_time = ?,
-        car_no = ?, from_location = ?, to_location = ?, route_charge = ?,
-        empty_pickup_charge = ?, empty_dropoff_charge = ?, empty_handling_location = ?,
-        overnight_status = ?, day_over_status = ?,
-        remarks = ?, agent_name = ?, -- NEW: agent_name
-        total_charge = ?, km_travelled = ?, fuel_amount = ?, fuel_cost = ?, driver_name = ?,
-        is_manual_edited = ?, updated_at = CURRENT_TIMESTAMP
+        start_date = ?,
+        start_time = ?,
+        end_date = ?,
+        end_time = ?,
+        car_no = ?,
+        from_location = ?,
+        to_location = ?,
+        trip_type = ?,
+        cargo_load_type = ?,
+        cargo_load_date = ?,
+        cargo_load_time = ?,
+        route_charge = ?,
+        empty_handling_location = ?,
+        direction = ?,
+        empty_pickup_dropoff_charge = ?,
+        overnight_status = ?,
+        overnight_total_charges = ?,
+        day_over_status = ?,
+        day_over_total_charges = ?,
+        point_change_locations = ?,
+        point_change_total_charges = ?,
+        remarks = ?,
+        agent_name = ?,
+        total_charge = ?,
+        km_travelled = ?,
+        fuel_amount = ?,
+        fuel_cost = ?,
+        driver_name = ?,
+        is_manual_edited = ?,
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [
-      date, startTime, endDate, endTime,
-      carNo, from_location, to_location, routeCharge,
-      empty_pickup_charge, empty_dropoff_charge, empty_handling_location,
-      overnight_status, day_over_status,
-      remarks, agent_name, // NEW: agent_name
-      total_charge, km_travelled, 0, 0, driverName, is_manual_edited, id
-    ]);
+    `,
+      [
+        start_date,
+        start_time || null,
+        end_date || null,
+        end_time || null,
+        car_no,
+        from_location,
+        to_location,
+        trip_type || null,
+        cargo_load_type || null,
+        cargo_load_date || null,
+        cargo_load_time || null,
+        route_charge || null,
+        empty_handling_location || null,
+        direction || null,
+        empty_pickup_dropoff_charge || null,
+        overnight_status || 0,
+        overnight_total_charges || 0,
+        day_over_status || 0,
+        day_over_total_charges || 0,
+        point_change_locations ? JSON.stringify(point_change_locations) : null,
+        point_change_total_charges || null,
+        remarks || null,
+        agent_name || null,
+        total_charge || null,
+        km_travelled || null,
+        fuel_amount || 0,
+        fuel_cost || 0,
+        driver_name || 'N/A',
+        is_manual_edited || 0,
+        id,
+      ]
+    );
 
     if (result.changes === 0) {
       return res.status(404).json({ message: "Trip not found." });
     }
     res.json({
       message: "Trip updated successfully",
-      tripId: id
+      tripId: id,
     });
   } catch (err) {
     console.error("Error updating trip:", err.message);
@@ -650,7 +1155,7 @@ app.put('/api/trips/:id', async (req, res) => {
 });
 
 // API endpoint to delete a trip (DELETE /api/trips/:id)
-app.delete('/api/trips/:id', async (req, res) => {
+app.delete("/api/trips/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const result = await dbRun(`DELETE FROM trips WHERE id = ?`, id);
@@ -659,7 +1164,7 @@ app.delete('/api/trips/:id', async (req, res) => {
     }
     res.json({
       message: "Trip deleted successfully",
-      tripId: id
+      tripId: id,
     });
   } catch (err) {
     console.error("Error deleting trip:", err.message);
@@ -667,18 +1172,19 @@ app.delete('/api/trips/:id', async (req, res) => {
   }
 });
 
-
 // API endpoint to get the latest route charges version (now gets the active one)
-app.get('/api/route-charges', async (req, res) => {
+app.get("/api/route-charges", async (req, res) => {
   try {
     // This now fetches the *active* version, which has end_date IS NULL
-    const row = await dbGet(`SELECT route_data FROM route_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`);
+    const row = await dbGet(
+      `SELECT route_data FROM route_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
+    );
     if (row) {
       try {
         const routeCharges = JSON.parse(row.route_data);
         res.json({
           message: "success",
-          data: routeCharges
+          data: routeCharges,
         });
       } catch (parseErr) {
         res.status(500).json({ error: "Failed to parse route charges data." });
@@ -692,7 +1198,7 @@ app.get('/api/route-charges', async (req, res) => {
 });
 
 // NEW API: Get the current active route charges version with full details
-app.get('/api/route-charges/active', async (req, res) => {
+app.get("/api/route-charges/active", async (req, res) => {
   try {
     const row = await dbGet(`
       SELECT id, effective_date, version_number, route_data
@@ -710,14 +1216,20 @@ app.get('/api/route-charges/active', async (req, res) => {
             id: row.id,
             effectiveDate: row.effective_date,
             versionNumber: row.version_number,
-            routeCharges: routeCharges
-          }
+            routeCharges: routeCharges,
+          },
         });
       } catch (parseErr) {
-        res.status(500).json({ error: "Failed to parse route charges data from active version." });
+        res
+          .status(500)
+          .json({
+            error: "Failed to parse route charges data from active version.",
+          });
       }
     } else {
-      res.status(404).json({ message: "No active route charges version found." });
+      res
+        .status(404)
+        .json({ message: "No active route charges version found." });
     }
   } catch (err) {
     console.error("Error fetching active route charges version:", err.message);
@@ -726,58 +1238,70 @@ app.get('/api/route-charges/active', async (req, res) => {
 });
 
 // NEW API: Create a new route charges version
-app.post('/api/route-charges/new-version', async (req, res) => {
+app.post("/api/route-charges/new-version", async (req, res) => {
   const { effectiveDate, routeData } = req.body;
 
   if (!effectiveDate || !routeData) {
-    return res.status(400).json({ error: "Effective date and route data are required." });
+    return res
+      .status(400)
+      .json({ error: "Effective date and route data are required." });
   }
 
   let parsedRouteData;
   try {
     parsedRouteData = JSON.parse(routeData);
     if (!Array.isArray(parsedRouteData)) {
-      return res.status(400).json({ error: "Route data must be a JSON array string." });
+      return res
+        .status(400)
+        .json({ error: "Route data must be a JSON array string." });
     }
   } catch (parseErr) {
-    return res.status(400).json({ error: "Invalid route data format. Must be a valid JSON string." });
+    return res
+      .status(400)
+      .json({
+        error: "Invalid route data format. Must be a valid JSON string.",
+      });
   }
 
   try {
     // Start a transaction for atomicity
-    await dbRun('BEGIN TRANSACTION');
+    await dbRun("BEGIN TRANSACTION");
 
     // 1. Find any existing active route charges version (end_date IS NULL)
     const existingActiveVersion = await dbGet(
       `SELECT id, effective_date, version_number FROM route_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
     );
 
-    let newVersionNumber = '1.0'; // Default for the very first version
+    let newVersionNumber = "1.0"; // Default for the very first version
 
     // 2. If an active version exists, update its end_date and determine new version number
     if (existingActiveVersion) {
       // Validate new effectiveDate against existing active version's effective_date
       if (effectiveDate <= existingActiveVersion.effective_date) {
-        await dbRun('ROLLBACK'); // Rollback transaction on error
+        await dbRun("ROLLBACK"); // Rollback transaction on error
         return res.status(400).json({
-          error: `New effective date (${effectiveDate}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+          error: `New effective date (${effectiveDate}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`,
         });
       }
 
       // Calculate end date for the old version (one day before new effectiveDate)
       const oldEndDate = new Date(effectiveDate);
       oldEndDate.setDate(oldEndDate.getDate() - 1);
-      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+      const formattedOldEndDate = oldEndDate.toISOString().split("T")[0];
 
       await dbRun(
         `UPDATE route_charges_versions SET end_date = ? WHERE id = ?`,
         [formattedOldEndDate, existingActiveVersion.id]
       );
-      console.log(`Ended previous route charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+      console.log(
+        `Ended previous route charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`
+      );
 
       // Increment version number (assuming X.0 format for simplicity for now)
       if (existingActiveVersion.version_number) {
-        const currentMajorVersion = parseInt(existingActiveVersion.version_number.split('.')[0]);
+        const currentMajorVersion = parseInt(
+          existingActiveVersion.version_number.split(".")[0]
+        );
         newVersionNumber = `${currentMajorVersion + 1}.0`;
       }
     }
@@ -789,22 +1313,21 @@ app.post('/api/route-charges/new-version', async (req, res) => {
       [effectiveDate, null, newVersionNumber, routeData] // New version is active (end_date NULL)
     );
 
-    await dbRun('COMMIT'); // Commit the transaction
+    await dbRun("COMMIT"); // Commit the transaction
     res.status(201).json({
       message: "New route charges version added successfully",
       id: result.id,
-      versionNumber: newVersionNumber
+      versionNumber: newVersionNumber,
     });
-
   } catch (err) {
-    await dbRun('ROLLBACK'); // Rollback transaction on error
+    await dbRun("ROLLBACK"); // Rollback transaction on error
     console.error("Error adding new route charges version:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // NEW API: Get all historical route charges versions
-app.get('/api/route-charges/history', async (req, res) => {
+app.get("/api/route-charges/history", async (req, res) => {
   try {
     const rows = await dbAll(`
       SELECT id, effective_date, end_date, version_number, created_at, route_data
@@ -812,13 +1335,13 @@ app.get('/api/route-charges/history', async (req, res) => {
       ORDER BY effective_date DESC, created_at DESC
     `);
     // Parse route_data for each row before sending
-    const historyData = rows.map(row => ({
+    const historyData = rows.map((row) => ({
       ...row,
-      route_data: JSON.parse(row.route_data) // Parse JSON string back to object
+      route_data: JSON.parse(row.route_data), // Parse JSON string back to object
     }));
     res.json({
       message: "success",
-      data: historyData
+      data: historyData,
     });
   } catch (err) {
     console.error("Error fetching route charges history:", err.message);
@@ -827,100 +1350,147 @@ app.get('/api/route-charges/history', async (req, res) => {
 });
 
 // NEW API: Update effective_date and end_date of a specific route charges version
-app.put('/api/route-charges-versions/:id', async (req, res) => {
+app.put("/api/route-charges-versions/:id", async (req, res) => {
   const { id } = req.params;
   const { effectiveDate, endDate } = req.body; // endDate can be null
 
   if (!effectiveDate) {
-    return res.status(400).json({ error: "Effective date is required for update." });
+    return res
+      .status(400)
+      .json({ error: "Effective date is required for update." });
   }
 
   try {
-    await dbRun('BEGIN TRANSACTION');
+    await dbRun("BEGIN TRANSACTION");
 
-    const existingVersion = await dbGet(`SELECT * FROM route_charges_versions WHERE id = ?`, [id]);
+    const existingVersion = await dbGet(
+      `SELECT * FROM route_charges_versions WHERE id = ?`,
+      [id]
+    );
     if (!existingVersion) {
-      await dbRun('ROLLBACK');
-      return res.status(404).json({ message: "Route charges version not found." });
+      await dbRun("ROLLBACK");
+      return res
+        .status(404)
+        .json({ message: "Route charges version not found." });
     }
 
     // Validate dates: effectiveDate must be before endDate (if endDate is not null)
     if (endDate && effectiveDate > endDate) {
-      await dbRun('ROLLBACK');
-      return res.status(400).json({ error: "Effective date cannot be after end date." });
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({ error: "Effective date cannot be after end date." });
     }
 
     // Advanced validation for overlaps/gaps:
     // 1. Check for overlaps with previous version
-    const prevVersion = await dbGet(`
+    const prevVersion = await dbGet(
+      `
       SELECT id, effective_date, end_date FROM route_charges_versions
       WHERE effective_date < ? AND id != ?
       ORDER BY effective_date DESC, created_at DESC LIMIT 1
-    `, [effectiveDate, id]);
+    `,
+      [effectiveDate, id]
+    );
 
-    if (prevVersion && prevVersion.end_date && effectiveDate <= prevVersion.end_date) {
-      await dbRun('ROLLBACK');
-      return res.status(400).json({ error: `New effective date (${effectiveDate}) overlaps with previous version (ends ${prevVersion.end_date}).` });
+    if (
+      prevVersion &&
+      prevVersion.end_date &&
+      effectiveDate <= prevVersion.end_date
+    ) {
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({
+          error: `New effective date (${effectiveDate}) overlaps with previous version (ends ${prevVersion.end_date}).`,
+        });
     }
 
     // 2. Check for overlaps with next version
-    const nextVersion = await dbGet(`
+    const nextVersion = await dbGet(
+      `
       SELECT id, effective_date, end_date FROM route_charges_versions
       WHERE effective_date > ? AND id != ?
       ORDER BY effective_date ASC, created_at ASC LIMIT 1
-    `, [endDate || '9999-12-31', id]); // If endDate is null, treat as very far future
+    `,
+      [endDate || "9999-12-31", id]
+    ); // If endDate is null, treat as very far future
 
     if (nextVersion && endDate && endDate >= nextVersion.effective_date) {
-      await dbRun('ROLLBACK');
-      return res.status(400).json({ error: `New end date (${endDate}) overlaps with next version (starts ${nextVersion.effective_date}).` });
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({
+          error: `New end date (${endDate}) overlaps with next version (starts ${nextVersion.effective_date}).`,
+        });
     }
     // If next version exists and its effective_date is before current effectiveDate, but current end_date is null
-    if (nextVersion && !endDate && nextVersion.effective_date <= effectiveDate) {
-        await dbRun('ROLLBACK');
-        return res.status(400).json({ error: `Cannot set this version as active, it overlaps with a future version starting ${nextVersion.effective_date}. Please set an end date for this version.` });
+    if (
+      nextVersion &&
+      !endDate &&
+      nextVersion.effective_date <= effectiveDate
+    ) {
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({
+          error: `Cannot set this version as active, it overlaps with a future version starting ${nextVersion.effective_date}. Please set an end date for this version.`,
+        });
     }
 
-
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       UPDATE route_charges_versions SET
         effective_date = ?,
         end_date = ?,
         created_at = CURRENT_TIMESTAMP -- Update timestamp to reflect modification
       WHERE id = ?
-    `, [effectiveDate, endDate, id]);
+    `,
+      [effectiveDate, endDate, id]
+    );
 
     if (result.changes === 0) {
-      await dbRun('ROLLBACK');
-      return res.status(404).json({ message: "Route charges version not found or no changes made." });
+      await dbRun("ROLLBACK");
+      return res
+        .status(404)
+        .json({
+          message: "Route charges version not found or no changes made.",
+        });
     }
 
-    await dbRun('COMMIT');
+    await dbRun("COMMIT");
     res.json({
       message: "Route charges version dates updated successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
-    await dbRun('ROLLBACK');
+    await dbRun("ROLLBACK");
     console.error("Error updating route charges version dates:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // NEW API: Activate a historical route charges version (creates a new active record)
-app.post('/api/route-charges/activate-version', async (req, res) => {
+app.post("/api/route-charges/activate-version", async (req, res) => {
   const { versionIdToActivate, newEffectiveDateForActivation } = req.body;
 
   if (!versionIdToActivate || !newEffectiveDateForActivation) {
-    return res.status(400).json({ error: "Version ID to activate and new effective date are required." });
+    return res
+      .status(400)
+      .json({
+        error: "Version ID to activate and new effective date are required.",
+      });
   }
 
   try {
-    await dbRun('BEGIN TRANSACTION');
+    await dbRun("BEGIN TRANSACTION");
 
-    const historicalVersion = await dbGet(`SELECT route_data, version_number FROM route_charges_versions WHERE id = ?`, [versionIdToActivate]);
+    const historicalVersion = await dbGet(
+      `SELECT route_data, version_number FROM route_charges_versions WHERE id = ?`,
+      [versionIdToActivate]
+    );
     if (!historicalVersion) {
-      await dbRun('ROLLBACK');
+      await dbRun("ROLLBACK");
       return res.status(404).json({ message: "Historical version not found." });
     }
 
@@ -929,51 +1499,66 @@ app.post('/api/route-charges/activate-version', async (req, res) => {
     );
 
     if (existingActiveVersion) {
-      if (newEffectiveDateForActivation <= existingActiveVersion.effective_date) {
-        await dbRun('ROLLBACK');
+      if (
+        newEffectiveDateForActivation <= existingActiveVersion.effective_date
+      ) {
+        await dbRun("ROLLBACK");
         return res.status(400).json({
-          error: `New activation date (${newEffectiveDateForActivation}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+          error: `New activation date (${newEffectiveDateForActivation}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`,
         });
       }
 
       const oldEndDate = new Date(newEffectiveDateForActivation);
       oldEndDate.setDate(oldEndDate.getDate() - 1);
-      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+      const formattedOldEndDate = oldEndDate.toISOString().split("T")[0];
 
       await dbRun(
         `UPDATE route_charges_versions SET end_date = ? WHERE id = ?`,
         [formattedOldEndDate, existingActiveVersion.id]
       );
-      console.log(`Ended previous active version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+      console.log(
+        `Ended previous active version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`
+      );
     }
 
-    const maxVersionRow = await dbGet(`SELECT MAX(CAST(SUBSTR(version_number, 1, INSTR(version_number, '.') - 1) AS INTEGER)) AS max_major_version FROM route_charges_versions`);
-    const maxMajorVersion = maxVersionRow && maxVersionRow.max_major_version ? maxVersionRow.max_major_version : 0;
+    const maxVersionRow = await dbGet(
+      `SELECT MAX(CAST(SUBSTR(version_number, 1, INSTR(version_number, '.') - 1) AS INTEGER)) AS max_major_version FROM route_charges_versions`
+    );
+    const maxMajorVersion =
+      maxVersionRow && maxVersionRow.max_major_version
+        ? maxVersionRow.max_major_version
+        : 0;
     const newVersionNumber = `${maxMajorVersion + 1}.0`;
 
     const result = await dbRun(
       `INSERT INTO route_charges_versions (effective_date, end_date, version_number, route_data)
        VALUES (?, ?, ?, ?)`,
-      [newEffectiveDateForActivation, null, newVersionNumber, historicalVersion.route_data]
+      [
+        newEffectiveDateForActivation,
+        null,
+        newVersionNumber,
+        historicalVersion.route_data,
+      ]
     );
 
-    await dbRun('COMMIT');
+    await dbRun("COMMIT");
     res.status(201).json({
       message: `Version ${historicalVersion.version_number} activated as new version ${newVersionNumber} successfully.`,
       id: result.id,
-      versionNumber: newVersionNumber
+      versionNumber: newVersionNumber,
     });
-
   } catch (err) {
-    await dbRun('ROLLBACK');
-    console.error("Error activating historical route charges version:", err.message);
+    await dbRun("ROLLBACK");
+    console.error(
+      "Error activating historical route charges version:",
+      err.message
+    );
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // NEW API: Get the current active empty charges version with full details
-app.get('/api/empty-charges/active', async (req, res) => {
+app.get("/api/empty-charges/active", async (req, res) => {
   try {
     const row = await dbGet(`
       SELECT id, effective_date, version_number, empty_charge_data
@@ -991,14 +1576,20 @@ app.get('/api/empty-charges/active', async (req, res) => {
             id: row.id,
             effectiveDate: row.effective_date,
             versionNumber: row.version_number,
-            emptyCharges: emptyCharges // This will contain empty_locations_charges and same_direction_overrides
-          }
+            emptyCharges: emptyCharges, // This will contain empty_locations_charges and same_direction_overrides
+          },
         });
       } catch (parseErr) {
-        res.status(500).json({ error: "Failed to parse empty charges data from active version." });
+        res
+          .status(500)
+          .json({
+            error: "Failed to parse empty charges data from active version.",
+          });
       }
     } else {
-      res.status(404).json({ message: "No active empty charges version found." });
+      res
+        .status(404)
+        .json({ message: "No active empty charges version found." });
     }
   } catch (err) {
     console.error("Error fetching active empty charges version:", err.message);
@@ -1007,59 +1598,77 @@ app.get('/api/empty-charges/active', async (req, res) => {
 });
 
 // NEW API: Create a new empty charges version
-app.post('/api/empty-charges/new-version', async (req, res) => {
+app.post("/api/empty-charges/new-version", async (req, res) => {
   const { effectiveDate, emptyChargeData } = req.body;
 
   if (!effectiveDate || !emptyChargeData) {
-    return res.status(400).json({ error: "Effective date and empty charge data are required." });
+    return res
+      .status(400)
+      .json({ error: "Effective date and empty charge data are required." });
   }
 
   let parsedEmptyChargeData;
   try {
     parsedEmptyChargeData = JSON.parse(emptyChargeData);
     // Basic validation: ensure it's an object with expected keys
-    if (typeof parsedEmptyChargeData !== 'object' || parsedEmptyChargeData === null ||
-        !Array.isArray(parsedEmptyChargeData.empty_locations_charges) ||
-        !Array.isArray(parsedEmptyChargeData.same_direction_overrides) ||
-        !Array.isArray(parsedEmptyChargeData.port_locations)) {
-      return res.status(400).json({ error: "Invalid empty charge data format. Must be a JSON object with 'empty_locations_charges', 'same_direction_overrides', and 'port_locations' arrays." });
+    if (
+      typeof parsedEmptyChargeData !== "object" ||
+      parsedEmptyChargeData === null ||
+      !Array.isArray(parsedEmptyChargeData.empty_locations_charges) ||
+      !Array.isArray(parsedEmptyChargeData.same_direction_overrides) ||
+      !Array.isArray(parsedEmptyChargeData.port_locations)
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "Invalid empty charge data format. Must be a JSON object with 'empty_locations_charges', 'same_direction_overrides', and 'port_locations' arrays.",
+        });
     }
   } catch (parseErr) {
-    return res.status(400).json({ error: "Invalid empty charge data format. Must be a valid JSON string." });
+    return res
+      .status(400)
+      .json({
+        error: "Invalid empty charge data format. Must be a valid JSON string.",
+      });
   }
 
   try {
-    await dbRun('BEGIN TRANSACTION');
+    await dbRun("BEGIN TRANSACTION");
 
     // 1. Find any existing active empty charges version (end_date IS NULL)
     const existingActiveVersion = await dbGet(
       `SELECT id, effective_date, version_number FROM empty_charges_versions WHERE end_date IS NULL ORDER BY effective_date DESC, created_at DESC LIMIT 1`
     );
 
-    let newVersionNumber = '1.0'; // Default for the very first version
+    let newVersionNumber = "1.0"; // Default for the very first version
 
     // 2. If an active version exists, update its end_date and determine new version number
     if (existingActiveVersion) {
       if (effectiveDate <= existingActiveVersion.effective_date) {
-        await dbRun('ROLLBACK');
+        await dbRun("ROLLBACK");
         return res.status(400).json({
-          error: `New effective date (${effectiveDate}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+          error: `New effective date (${effectiveDate}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`,
         });
       }
 
       const oldEndDate = new Date(effectiveDate);
       oldEndDate.setDate(oldEndDate.getDate() - 1);
-      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+      const formattedOldEndDate = oldEndDate.toISOString().split("T")[0];
 
       await dbRun(
         `UPDATE empty_charges_versions SET end_date = ? WHERE id = ?`,
         [formattedOldEndDate, existingActiveVersion.id]
       );
-      console.log(`Ended previous active empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+      console.log(
+        `Ended previous active empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`
+      );
 
       // Increment version number
       if (existingActiveVersion.version_number) {
-        const currentMajorVersion = parseInt(existingActiveVersion.version_number.split('.')[0]);
+        const currentMajorVersion = parseInt(
+          existingActiveVersion.version_number.split(".")[0]
+        );
         newVersionNumber = `${currentMajorVersion + 1}.0`;
       }
     }
@@ -1071,35 +1680,34 @@ app.post('/api/empty-charges/new-version', async (req, res) => {
       [effectiveDate, null, newVersionNumber, emptyChargeData]
     );
 
-    await dbRun('COMMIT');
+    await dbRun("COMMIT");
     res.status(201).json({
       message: "New empty charges version added successfully",
       id: result.id,
-      versionNumber: newVersionNumber
+      versionNumber: newVersionNumber,
     });
-
   } catch (err) {
-    await dbRun('ROLLBACK');
+    await dbRun("ROLLBACK");
     console.error("Error adding new empty charges version:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // NEW API: Get all historical empty charges versions
-app.get('/api/empty-charges/history', async (req, res) => {
+app.get("/api/empty-charges/history", async (req, res) => {
   try {
     const rows = await dbAll(`
       SELECT id, effective_date, end_date, version_number, created_at, empty_charge_data
       FROM empty_charges_versions
       ORDER BY effective_date DESC, created_at DESC
     `);
-    const historyData = rows.map(row => ({
+    const historyData = rows.map((row) => ({
       ...row,
-      empty_charge_data: JSON.parse(row.empty_charge_data)
+      emptyCharges: JSON.parse(row.empty_charge_data),
     }));
     res.json({
       message: "success",
-      data: historyData
+      data: historyData,
     });
   } catch (err) {
     console.error("Error fetching empty charges history:", err.message);
@@ -1108,94 +1716,143 @@ app.get('/api/empty-charges/history', async (req, res) => {
 });
 
 // NEW API: Update effective_date and end_date of a specific empty charges version
-app.put('/api/empty-charges-versions/:id', async (req, res) => {
+app.put("/api/empty-charges-versions/:id", async (req, res) => {
   const { id } = req.params;
   const { effectiveDate, endDate } = req.body;
 
   if (!effectiveDate) {
-    return res.status(400).json({ error: "Effective date is required for update." });
+    return res
+      .status(400)
+      .json({ error: "Effective date is required for update." });
   }
 
   try {
-    await dbRun('BEGIN TRANSACTION');
+    await dbRun("BEGIN TRANSACTION");
 
-    const existingVersion = await dbGet(`SELECT * FROM empty_charges_versions WHERE id = ?`, [id]);
+    const existingVersion = await dbGet(
+      `SELECT * FROM empty_charges_versions WHERE id = ?`,
+      [id]
+    );
     if (!existingVersion) {
-      await dbRun('ROLLBACK');
-      return res.status(404).json({ message: "Empty charges version not found." });
+      await dbRun("ROLLBACK");
+      return res
+        .status(404)
+        .json({ message: "Empty charges version not found." });
     }
 
     if (endDate && effectiveDate > endDate) {
-      await dbRun('ROLLBACK');
-      return res.status(400).json({ error: "Effective date cannot be after end date." });
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({ error: "Effective date cannot be after end date." });
     }
 
     // Validation for overlaps/gaps (similar to route charges)
-    const prevVersion = await dbGet(`
+    const prevVersion = await dbGet(
+      `
       SELECT id, effective_date, end_date FROM empty_charges_versions
       WHERE effective_date < ? AND id != ?
       ORDER BY effective_date DESC, created_at DESC LIMIT 1
-    `, [effectiveDate, id]);
+    `,
+      [effectiveDate, id]
+    );
 
-    if (prevVersion && prevVersion.end_date && effectiveDate <= prevVersion.end_date) {
-      await dbRun('ROLLBACK');
-      return res.status(400).json({ error: `New effective date (${effectiveDate}) overlaps with previous version (ends ${prevVersion.end_date}).` });
+    if (
+      prevVersion &&
+      prevVersion.end_date &&
+      effectiveDate <= prevVersion.end_date
+    ) {
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({
+          error: `New effective date (${effectiveDate}) overlaps with previous version (ends ${prevVersion.end_date}).`,
+        });
     }
 
-    const nextVersion = await dbGet(`
+    const nextVersion = await dbGet(
+      `
       SELECT id, effective_date, end_date FROM empty_charges_versions
       WHERE effective_date > ? AND id != ?
       ORDER BY effective_date ASC, created_at ASC LIMIT 1
-    `, [endDate || '9999-12-31', id]);
+    `,
+      [endDate || "9999-12-31", id]
+    );
 
     if (nextVersion && endDate && endDate >= nextVersion.effective_date) {
-      await dbRun('ROLLBACK');
-      return res.status(400).json({ error: `New end date (${endDate}) overlaps with next version (starts ${nextVersion.effective_date}).` });
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({
+          error: `New end date (${endDate}) overlaps with next version (starts ${nextVersion.effective_date}).`,
+        });
     }
-    if (nextVersion && !endDate && nextVersion.effective_date <= effectiveDate) {
-        await dbRun('ROLLBACK');
-        return res.status(400).json({ error: `Cannot set this version as active, it overlaps with a future version starting ${nextVersion.effective_date}. Please set an end date for this version.` });
+    if (
+      nextVersion &&
+      !endDate &&
+      nextVersion.effective_date <= effectiveDate
+    ) {
+      await dbRun("ROLLBACK");
+      return res
+        .status(400)
+        .json({
+          error: `Cannot set this version as active, it overlaps with a future version starting ${nextVersion.effective_date}. Please set an end date for this version.`,
+        });
     }
 
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       UPDATE empty_charges_versions SET
         effective_date = ?,
         end_date = ?,
         created_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [effectiveDate, endDate, id]);
+    `,
+      [effectiveDate, endDate, id]
+    );
 
     if (result.changes === 0) {
-      await dbRun('ROLLBACK');
-      return res.status(404).json({ message: "Empty charges version not found or no changes made." });
+      await dbRun("ROLLBACK");
+      return res
+        .status(404)
+        .json({
+          message: "Empty charges version not found or no changes made.",
+        });
     }
 
-    await dbRun('COMMIT');
+    await dbRun("COMMIT");
     res.json({
       message: "Empty charges version dates updated successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
-    await dbRun('ROLLBACK');
+    await dbRun("ROLLBACK");
     console.error("Error updating empty charges version dates:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // NEW API: Activate a historical empty charges version (creates a new active record)
-app.post('/api/empty-charges/activate-version', async (req, res) => {
+app.post("/api/empty-charges/activate-version", async (req, res) => {
   const { versionIdToActivate, newEffectiveDateForActivation } = req.body;
 
   if (!versionIdToActivate || !newEffectiveDateForActivation) {
-    return res.status(400).json({ error: "Version ID to activate and new effective date are required." });
+    return res
+      .status(400)
+      .json({
+        error: "Version ID to activate and new effective date are required.",
+      });
   }
 
   try {
-    await dbRun('BEGIN TRANSACTION');
+    await dbRun("BEGIN TRANSACTION");
 
-    const historicalVersion = await dbGet(`SELECT empty_charge_data, version_number FROM empty_charges_versions WHERE id = ?`, [versionIdToActivate]);
+    const historicalVersion = await dbGet(
+      `SELECT empty_charge_data, version_number FROM empty_charges_versions WHERE id = ?`,
+      [versionIdToActivate]
+    );
     if (!historicalVersion) {
-      await dbRun('ROLLBACK');
+      await dbRun("ROLLBACK");
       return res.status(404).json({ message: "Historical version not found." });
     }
 
@@ -1204,78 +1861,106 @@ app.post('/api/empty-charges/activate-version', async (req, res) => {
     );
 
     if (existingActiveVersion) {
-      if (newEffectiveDateForActivation <= existingActiveVersion.effective_date) {
-        await dbRun('ROLLBACK');
+      if (
+        newEffectiveDateForActivation <= existingActiveVersion.effective_date
+      ) {
+        await dbRun("ROLLBACK");
         return res.status(400).json({
-          error: `New activation date (${newEffectiveDateForActivation}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`
+          error: `New activation date (${newEffectiveDateForActivation}) must be after the current active version's start date (${existingActiveVersion.effective_date}).`,
         });
       }
 
       const oldEndDate = new Date(newEffectiveDateForActivation);
       oldEndDate.setDate(oldEndDate.getDate() - 1);
-      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+      const formattedOldEndDate = oldEndDate.toISOString().split("T")[0];
 
       await dbRun(
         `UPDATE empty_charges_versions SET end_date = ? WHERE id = ?`,
         [formattedOldEndDate, existingActiveVersion.id]
       );
-      console.log(`Ended previous active empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`);
+      console.log(
+        `Ended previous active empty charges version (ID: ${existingActiveVersion.id}) with end_date: ${formattedOldEndDate}`
+      );
     }
 
-    const maxVersionRow = await dbGet(`SELECT MAX(CAST(SUBSTR(version_number, 1, INSTR(version_number, '.') - 1) AS INTEGER)) AS max_major_version FROM empty_charges_versions`);
-    const maxMajorVersion = maxVersionRow && maxVersionRow.max_major_version ? maxVersionRow.max_major_version : 0;
+    const maxVersionRow = await dbGet(
+      `SELECT MAX(CAST(SUBSTR(version_number, 1, INSTR(version_number, '.') - 1) AS INTEGER)) AS max_major_version FROM empty_charges_versions`
+    );
+    const maxMajorVersion =
+      maxVersionRow && maxVersionRow.max_major_version
+        ? maxVersionRow.max_major_version
+        : 0;
     const newVersionNumber = `${maxMajorVersion + 1}.0`;
 
     const result = await dbRun(
       `INSERT INTO empty_charges_versions (effective_date, end_date, version_number, empty_charge_data)
        VALUES (?, ?, ?, ?)`,
-      [newEffectiveDateForActivation, null, newVersionNumber, historicalVersion.empty_charge_data]
+      [
+        newEffectiveDateForActivation,
+        null,
+        newVersionNumber,
+        historicalVersion.empty_charge_data,
+      ]
     );
 
-    await dbRun('COMMIT');
+    await dbRun("COMMIT");
     res.status(201).json({
       message: `Version ${historicalVersion.version_number} activated as new version ${newVersionNumber} successfully.`,
       id: result.id,
-      versionNumber: newVersionNumber
+      versionNumber: newVersionNumber,
     });
-
   } catch (err) {
-    await dbRun('ROLLBACK');
-    console.error("Error activating historical empty charges version:", err.message);
+    await dbRun("ROLLBACK");
+    console.error(
+      "Error activating historical empty charges version:",
+      err.message
+    );
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // Helper function to calculate empty charges based on business logic
-async function calculateEmptyCharge(tripOrigin, tripDestination, emptyHandlingLocation, tripDate) {
+async function calculateEmptyCharge(
+  tripOrigin,
+  tripDestination,
+  emptyHandlingLocation,
+  tripDate
+) {
   let emptyCharge = 0;
-  let emptyChargeType = 'none'; // 'pickup', 'dropoff', or 'none'
+  let emptyChargeType = "none"; // 'pickup', 'dropoff', or 'none'
 
   try {
     // 1. Get the active empty charges version for the given tripDate
-    const activeEmptyChargesVersion = await dbGet(`
+    const activeEmptyChargesVersion = await dbGet(
+      `
       SELECT empty_charge_data
       FROM empty_charges_versions
       WHERE effective_date <= ? AND (end_date IS NULL OR end_date >= ?)
       ORDER BY effective_date DESC, created_at DESC
       LIMIT 1
-    `, [tripDate, tripDate]);
+    `,
+      [tripDate, tripDate]
+    );
 
     if (!activeEmptyChargesVersion) {
-      console.warn(`No active empty charges version found for date: ${tripDate}. Empty charge will be 0.`);
-      return { charge: 0, type: 'none' };
+      console.warn(
+        `No active empty charges version found for date: ${tripDate}. Empty charge will be 0.`
+      );
+      return { charge: 0, type: "none" };
     }
 
-    const emptyChargeData = JSON.parse(activeEmptyChargesVersion.empty_charge_data);
+    const emptyChargeData = JSON.parse(
+      activeEmptyChargesVersion.empty_charge_data
+    );
     const emptyLocationsCharges = emptyChargeData.empty_locations_charges || [];
-    const sameDirectionOverrides = emptyChargeData.same_direction_overrides || [];
+    const sameDirectionOverrides =
+      emptyChargeData.same_direction_overrides || [];
     const portLocations = new Set(emptyChargeData.port_locations || []);
 
     // Determine if it's an Empty Pickup or Empty Dropoff scenario based on port locations
     // Rule 1: Point A is a Port -> Empty Dropoff (Container came with cargo, dropped empty after cargo delivery)
     if (portLocations.has(tripOrigin)) {
-      emptyChargeType = 'dropoff';
+      emptyChargeType = "dropoff";
     }
     // Rule 2: Point B is a Port -> Empty Pickup (Container picked up empty, then loaded for delivery to Point B)
     // Rule 3: If emptyHandlingLocation is a port, it implies either pickup or dropoff associated with it.
@@ -1285,54 +1970,61 @@ async function calculateEmptyCharge(tripOrigin, tripDestination, emptyHandlingLo
 
     // A. First, determine the base empty charge from empty_locations_charges
     let baseCharge = 0;
-    const locationChargeEntry = emptyLocationsCharges.find(item => item.location === emptyHandlingLocation);
+    const locationChargeEntry = emptyLocationsCharges.find(
+      (item) => item.location === emptyHandlingLocation
+    );
     if (locationChargeEntry) {
       baseCharge = locationChargeEntry.charge_40_ft || 0; // Assuming 40' container for now
     } else {
-      console.warn(`Empty handling location '${emptyHandlingLocation}' not found in empty_locations_charges. Base charge will be 0.`);
+      console.warn(
+        `Empty handling location '${emptyHandlingLocation}' not found in empty_locations_charges. Base charge will be 0.`
+      );
       // If the location is not in charges list, it implies no charge
-      return { charge: 0, type: 'none' };
+      return { charge: 0, type: "none" };
     }
 
     // B. Then, determine if it's 'Same Direction' based on overrides
-    const isSameDirection = sameDirectionOverrides.some(rule =>
-      rule.main_trip_origin === tripOrigin &&
-      rule.main_trip_destination === tripDestination &&
-      rule.empty_location === emptyHandlingLocation
+    const isSameDirection = sameDirectionOverrides.some(
+      (rule) =>
+        rule.main_trip_origin === tripOrigin &&
+        rule.main_trip_destination === tripDestination &&
+        rule.empty_location === emptyHandlingLocation
     );
 
     // C. Apply the 'Same Direction' rule
     if (isSameDirection) {
       emptyCharge = 0; // Same direction, no extra charge
-      console.log(`Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Same Direction'. Charge is 0.`);
+      console.log(
+        `Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Same Direction'. Charge is 0.`
+      );
     } else {
       emptyCharge = baseCharge; // Opposite direction, apply base charge
-      console.log(`Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Opposite Direction'. Charge is ${baseCharge}.`);
+      console.log(
+        `Combination (${tripOrigin} -> ${tripDestination} with Empty ${emptyHandlingLocation}) is 'Opposite Direction'. Charge is ${baseCharge}.`
+      );
     }
 
     // Re-determine chargeType if needed for remarks based on final charge and ports.
     // This is optional if type is purely for internal logic not tied to final charge value.
-    if (emptyChargeType === 'none' && emptyCharge > 0) { // If charge > 0, it must be pickup/dropoff
+    if (emptyChargeType === "none" && emptyCharge > 0) {
+      // If charge > 0, it must be pickup/dropoff
       if (portLocations.has(tripOrigin)) {
-        emptyChargeType = 'dropoff';
+        emptyChargeType = "dropoff";
       } else if (portLocations.has(tripDestination)) {
-        emptyChargeType = 'pickup';
+        emptyChargeType = "pickup";
       }
     }
-
-
   } catch (err) {
     console.error("Error in calculateEmptyCharge:", err.message);
     emptyCharge = 0; // Default to 0 on error
-    emptyChargeType = 'none';
+    emptyChargeType = "none";
   }
 
   return { charge: emptyCharge, type: emptyChargeType };
 }
 
-
 // API endpoint to get all settings
-app.get('/api/settings', async (req, res) => {
+app.get("/api/settings", async (req, res) => {
   try {
     const rows = await dbAll("SELECT setting_key, setting_value FROM settings");
     const settings = rows.reduce((acc, current) => {
@@ -1341,63 +2033,71 @@ app.get('/api/settings', async (req, res) => {
     }, {});
     res.json({
       message: "success",
-      data: settings
+      data: settings,
     });
   } catch (err) {
-      console.error("Error fetching settings:", err.message);
+    console.error("Error fetching settings:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // API endpoint to get all unique car numbers from trips, maintenance, fuel_logs, and assignments
-app.get('/api/unique-car-numbers', async (req, res) => {
+app.get("/api/unique-car-numbers", async (req, res) => {
   try {
     const uniqueCarNumbers = new Set();
     const tripRows = await dbAll("SELECT DISTINCT car_no FROM trips");
-    tripRows.forEach(row => uniqueCarNumbers.add(row.car_no));
+    tripRows.forEach((row) => uniqueCarNumbers.add(row.car_no));
 
-    const maintenanceRows = await dbAll("SELECT DISTINCT car_no FROM car_maintenance");
-    maintenanceRows.forEach(row => uniqueCarNumbers.add(row.car_no));
+    const maintenanceRows = await dbAll(
+      "SELECT DISTINCT car_no FROM car_maintenance"
+    );
+    maintenanceRows.forEach((row) => uniqueCarNumbers.add(row.car_no));
 
     // Changed to use log_datetime for fuel_logs
     const fuelLogsRows = await dbAll("SELECT DISTINCT car_no FROM fuel_logs");
-    fuelLogsRows.forEach(row => uniqueCarNumbers.add(row.car_no));
+    fuelLogsRows.forEach((row) => uniqueCarNumbers.add(row.car_no));
 
-    const assignmentRows = await dbAll("SELECT DISTINCT car_no FROM car_driver_assignments");
-    assignmentRows.forEach(row => uniqueCarNumbers.add(row.car_no));
+    const assignmentRows = await dbAll(
+      "SELECT DISTINCT car_no FROM car_driver_assignments"
+    );
+    assignmentRows.forEach((row) => uniqueCarNumbers.add(row.car_no));
 
-    const fuelReadingsRows = await dbAll("SELECT DISTINCT car_no FROM fuel_readings");
-    fuelReadingsRows.forEach(row => uniqueCarNumbers.add(row.car_no));
-
+    const fuelReadingsRows = await dbAll(
+      "SELECT DISTINCT car_no FROM fuel_readings"
+    );
+    fuelReadingsRows.forEach((row) => uniqueCarNumbers.add(row.car_no));
 
     const sortedCarNumbers = Array.from(uniqueCarNumbers).sort();
     res.json({
       message: "success",
-      data: sortedCarNumbers
+      data: sortedCarNumbers,
     });
-  }
-  catch (err) {
+  } catch (err) {
     console.error("Error fetching unique car numbers:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // API endpoint to add a new car maintenance record
-app.post('/api/car-maintenance', async (req, res) => {
+app.post("/api/car-maintenance", async (req, res) => {
   const { carNo, maintenanceDate, description, cost } = req.body;
   if (!carNo || !maintenanceDate || !description || !cost) {
-    return res.status(400).json({ error: "Missing required car maintenance fields." });
+    return res
+      .status(400)
+      .json({ error: "Missing required car maintenance fields." });
   }
 
   try {
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       INSERT INTO car_maintenance (car_no, maintenance_date, description, cost)
       VALUES (?, ?, ?, ?)
-    `, [carNo, maintenanceDate, description, cost]);
+    `,
+      [carNo, maintenanceDate, description, cost]
+    );
     res.status(201).json({
       message: "Car maintenance record added successfully",
-      id: result.id
+      id: result.id,
     });
   } catch (err) {
     console.error("Error inserting car maintenance record:", err.message);
@@ -1406,30 +2106,37 @@ app.post('/api/car-maintenance', async (req, res) => {
 });
 
 // API endpoint to update a car maintenance record
-app.put('/api/car-maintenance/:id', async (req, res) => {
+app.put("/api/car-maintenance/:id", async (req, res) => {
   const { id } = req.params;
   const { carNo, maintenanceDate, description, cost } = req.body; // description will be the final description (e.g., "အခြား (Other)" or actual text)
 
   if (!carNo || !maintenanceDate || !description || !cost) {
-    return res.status(400).json({ error: "Missing required car maintenance fields for update." });
+    return res
+      .status(400)
+      .json({ error: "Missing required car maintenance fields for update." });
   }
 
   try {
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       UPDATE car_maintenance SET
         car_no = ?,
         maintenance_date = ?,
         description = ?,
         cost = ?
       WHERE id = ?
-    `, [carNo, maintenanceDate, description, cost, id]);
+    `,
+      [carNo, maintenanceDate, description, cost, id]
+    );
 
     if (result.changes === 0) {
-      return res.status(404).json({ message: "Car maintenance record not found." });
+      return res
+        .status(404)
+        .json({ message: "Car maintenance record not found." });
     }
     res.json({
       message: "Car maintenance record updated successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
     console.error("Error updating car maintenance record:", err.message);
@@ -1439,18 +2146,19 @@ app.put('/api/car-maintenance/:id', async (req, res) => {
 
 // API endpoint to get car maintenance records for a specific car with filters
 // Modified to include year, month, description, and otherDescription filters
-app.get('/api/car-maintenance/:carNo', async (req, res) => {
+app.get("/api/car-maintenance/:carNo", async (req, res) => {
   const { carNo } = req.params;
   const { year, month, description, otherDescription } = req.query;
 
-  let whereClauses = ['car_no = ?'];
+  let whereClauses = ["car_no = ?"];
   let params = [carNo];
 
   if (year) {
     if (month) {
       whereClauses.push("strftime('%Y-%m', maintenance_date) = ?");
-      params.push(`${year}-${String(month).padStart(2, '0')}`);
-    } else { // Filter by year only if month is not provided (or is 'All')
+      params.push(`${year}-${String(month).padStart(2, "0")}`);
+    } else {
+      // Filter by year only if month is not provided (or is 'All')
       whereClauses.push("strftime('%Y', maintenance_date) = ?");
       params.push(`${year}`);
     }
@@ -1459,24 +2167,27 @@ app.get('/api/car-maintenance/:carNo', async (req, res) => {
   if (description) {
     if (description === "အခြား (Other)" && otherDescription) {
       // If "Other" is selected and otherDescription is provided, filter by it
-      whereClauses.push('description LIKE ?');
+      whereClauses.push("description LIKE ?");
       params.push(`%${otherDescription}%`);
     } else if (description !== "အခြား (Other)") {
       // If a specific description (not "Other") is selected, filter by it
-      whereClauses.push('description = ?');
+      whereClauses.push("description = ?");
       params.push(description);
     }
     // If description is "Other" but otherDescription is empty, it means "All other"
     // which is covered by not adding a description filter.
   }
 
-  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+  const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
 
   try {
-    const rows = await dbAll(`SELECT * FROM car_maintenance ${whereSql} ORDER BY maintenance_date DESC`, params);
+    const rows = await dbAll(
+      `SELECT * FROM car_maintenance ${whereSql} ORDER BY maintenance_date DESC`,
+      params
+    );
     res.json({
       message: "success",
-      data: rows
+      data: rows,
     });
   } catch (err) {
     console.error("Error fetching car maintenance records:", err.message);
@@ -1486,23 +2197,39 @@ app.get('/api/car-maintenance/:carNo', async (req, res) => {
 
 // API endpoint to add a new fuel log (for CarManagementPage)
 // Modified to accept log_datetime
-app.post('/api/fuel-logs', async (req, res) => {
+app.post("/api/fuel-logs", async (req, res) => {
   const { carNo, logDate, logTime, fuelAmount, fuelCost, remarks } = req.body;
   // Combine logDate and logTime into log_datetime
   const logDatetime = `${logDate} ${logTime}`;
 
-  if (!carNo || !logDate || !logTime || fuelAmount === undefined || fuelAmount === null || fuelCost === undefined || fuelCost === null) {
-    return res.status(400).json({ error: "Missing required fuel log fields (carNo, logDate, logTime, fuelAmount, fuelCost)." });
+  if (
+    !carNo ||
+    !logDate ||
+    !logTime ||
+    fuelAmount === undefined ||
+    fuelAmount === null ||
+    fuelCost === undefined ||
+    fuelCost === null
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "Missing required fuel log fields (carNo, logDate, logTime, fuelAmount, fuelCost).",
+      });
   }
 
   try {
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       INSERT INTO fuel_logs (car_no, log_datetime, fuel_amount, fuel_cost, remarks)
       VALUES (?, ?, ?, ?, ?)
-    `, [carNo, logDatetime, fuelAmount, fuelCost, remarks]);
+    `,
+      [carNo, logDatetime, fuelAmount, fuelCost, remarks]
+    );
     res.status(201).json({
       message: "Fuel log added successfully",
-      id: result.id
+      id: result.id,
     });
   } catch (err) {
     console.error("Error inserting fuel log:", err.message);
@@ -1512,30 +2239,33 @@ app.post('/api/fuel-logs', async (req, res) => {
 
 // API endpoint to get fuel logs for a specific car (for CarManagementPage)
 // Modified to order by log_datetime and include year/month filters
-app.get('/api/fuel-logs/:carNo', async (req, res) => {
+app.get("/api/fuel-logs/:carNo", async (req, res) => {
   const { carNo } = req.params;
   const { year, month } = req.query; // Get year and month from query parameters
 
-  let whereClauses = ['car_no = ?'];
+  let whereClauses = ["car_no = ?"];
   let params = [carNo];
 
   if (year) {
     if (month) {
       whereClauses.push("strftime('%Y-%m', log_datetime) = ?");
-      params.push(`${year}-${String(month).padStart(2, '0')}`);
+      params.push(`${year}-${String(month).padStart(2, "0")}`);
     } else {
       whereClauses.push("strftime('%Y', log_datetime) = ?");
       params.push(`${year}`);
     }
   }
 
-  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+  const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
 
   try {
-    const rows = await dbAll(`SELECT * FROM fuel_logs ${whereSql} ORDER BY log_datetime DESC`, params);
+    const rows = await dbAll(
+      `SELECT * FROM fuel_logs ${whereSql} ORDER BY log_datetime DESC`,
+      params
+    );
     res.json({
       message: "success",
-      data: rows
+      data: rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1551,7 +2281,12 @@ app.get('/api/fuel-logs/:carNo', async (req, res) => {
  * @param {number|null} currentReadingId - The ID of the current reading being updated (null for new entries).
  * @returns {Promise<{calculatedPreviousReading: number|null}>}
  */
-async function getCalculatedPreviousFuelReading(carNo, currentReadingDate, currentReadingTime, currentReadingId = null) {
+async function getCalculatedPreviousFuelReading(
+  carNo,
+  currentReadingDate,
+  currentReadingTime,
+  currentReadingId = null
+) {
   let lastFuelGaugeReading = null;
   let lastReadingDateTime = null; // Format: YYYY-MM-DD HH:MM
 
@@ -1561,7 +2296,12 @@ async function getCalculatedPreviousFuelReading(carNo, currentReadingDate, curre
     FROM fuel_readings
     WHERE car_no = ? AND (reading_date < ? OR (reading_date = ? AND reading_time < ?))
   `;
-  let prevReadingParams = [carNo, currentReadingDate, currentReadingDate, currentReadingTime];
+  let prevReadingParams = [
+    carNo,
+    currentReadingDate,
+    currentReadingDate,
+    currentReadingTime,
+  ];
 
   if (currentReadingId !== null) {
     prevReadingQuery += ` AND id != ?`; // Exclude the current record if it's an update
@@ -1607,7 +2347,9 @@ async function getCalculatedPreviousFuelReading(carNo, currentReadingDate, curre
   }
 
   const fuelLogsSumResult = await dbGet(fuelLogsSumQuery, fuelLogsSumParams);
-  const totalFuelAdded = fuelLogsSumResult ? (fuelLogsSumResult.total_fuel_added || 0) : 0;
+  const totalFuelAdded = fuelLogsSumResult
+    ? fuelLogsSumResult.total_fuel_added || 0
+    : 0;
 
   // Add the summed fuel logs to the previous gauge reading
   if (calculatedPreviousReading !== null) {
@@ -1617,24 +2359,59 @@ async function getCalculatedPreviousFuelReading(carNo, currentReadingDate, curre
     calculatedPreviousReading = totalFuelAdded;
   }
 
-  console.log(`[getCalculatedPreviousFuelReading] CarNo: ${carNo}, CurrentDateTime: ${currentReadingDate} ${currentReadingTime}, CurrentReadingId: ${currentReadingId}`);
-  console.log(`[getCalculatedPreviousFuelReading] Last Recorded Reading:`, lastRecordedReading);
-  console.log(`[getCalculatedPreviousFuelReading] Last Fuel Gauge Reading: ${lastFuelGaugeReading}, Last Reading DateTime: ${lastReadingDateTime}`);
-  console.log(`[getCalculatedPreviousFuelReading] Fuel Logs Sum Query: ${fuelLogsSumQuery}, Params:`, fuelLogsSumParams);
-  console.log(`[getCalculatedPreviousFuelReading] Total Fuel Added from Logs:`, totalFuelAdded);
-  console.log(`[getCalculatedPreviousFuelReading] Final Calculated Previous Reading:`, calculatedPreviousReading);
+  console.log(
+    `[getCalculatedPreviousFuelReading] CarNo: ${carNo}, CurrentDateTime: ${currentReadingDate} ${currentReadingTime}, CurrentReadingId: ${currentReadingId}`
+  );
+  console.log(
+    `[getCalculatedPreviousFuelReading] Last Recorded Reading:`,
+    lastRecordedReading
+  );
+  console.log(
+    `[getCalculatedPreviousFuelReading] Last Fuel Gauge Reading: ${lastFuelGaugeReading}, Last Reading DateTime: ${lastReadingDateTime}`
+  );
+  console.log(
+    `[getCalculatedPreviousFuelReading] Fuel Logs Sum Query: ${fuelLogsSumQuery}, Params:`,
+    fuelLogsSumParams
+  );
+  console.log(
+    `[getCalculatedPreviousFuelReading] Total Fuel Added from Logs:`,
+    totalFuelAdded
+  );
+  console.log(
+    `[getCalculatedPreviousFuelReading] Final Calculated Previous Reading:`,
+    calculatedPreviousReading
+  );
 
   return {
-    calculatedPreviousReading: calculatedPreviousReading
+    calculatedPreviousReading: calculatedPreviousReading,
   };
 }
 
-
 // API endpoint to add a new fuel reading (for FuelConsumptionPage)
-app.post('/api/fuel-readings', async (req, res) => {
-  const { carNo, tripId, readingDate, readingTime, fuelGaugeReading, previousFuelGaugeReading, remarks } = req.body;
-  if (!carNo || !tripId || !readingDate || !readingTime || fuelGaugeReading === undefined || fuelGaugeReading === null) {
-    return res.status(400).json({ error: "Required fields (carNo, tripId, readingDate, readingTime, fuelGaugeReading) cannot be empty." });
+app.post("/api/fuel-readings", async (req, res) => {
+  const {
+    carNo,
+    tripId,
+    readingDate,
+    readingTime,
+    fuelGaugeReading,
+    previousFuelGaugeReading,
+    remarks,
+  } = req.body;
+  if (
+    !carNo ||
+    !tripId ||
+    !readingDate ||
+    !readingTime ||
+    fuelGaugeReading === undefined ||
+    fuelGaugeReading === null
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "Required fields (carNo, tripId, readingDate, readingTime, fuelGaugeReading) cannot be empty.",
+      });
   }
 
   const currentReading = parseFloat(fuelGaugeReading);
@@ -1643,27 +2420,53 @@ app.post('/api/fuel-readings', async (req, res) => {
   }
 
   if (currentReading > 20) {
-    return res.status(400).json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ၂၀ ဂါလံထက် မများရပါ။" });
+    return res
+      .status(400)
+      .json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ၂၀ ဂါလံထက် မများရပါ။" });
   }
 
   let actualPreviousFuelGaugeReading = null;
 
   // If previousFuelGaugeReading is explicitly provided in the request body (manual input)
-  if (previousFuelGaugeReading !== undefined && previousFuelGaugeReading !== null && previousFuelGaugeReading !== '') {
+  if (
+    previousFuelGaugeReading !== undefined &&
+    previousFuelGaugeReading !== null &&
+    previousFuelGaugeReading !== ""
+  ) {
     actualPreviousFuelGaugeReading = parseFloat(previousFuelGaugeReading);
     if (isNaN(actualPreviousFuelGaugeReading)) {
-      return res.status(400).json({ error: "Invalid previousFuelGaugeReading value." });
+      return res
+        .status(400)
+        .json({ error: "Invalid previousFuelGaugeReading value." });
     }
     if (currentReading > actualPreviousFuelGaugeReading) {
-      return res.status(400).json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။" });
+      return res
+        .status(400)
+        .json({
+          error:
+            "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။",
+        });
     }
   } else {
     // Auto-fetch previous reading and sum fuel_logs if not provided manually
-    const prevReadingData = await getCalculatedPreviousFuelReading(carNo, readingDate, readingTime, null); // Pass null for currentReadingId
+    const prevReadingData = await getCalculatedPreviousFuelReading(
+      carNo,
+      readingDate,
+      readingTime,
+      null
+    ); // Pass null for currentReadingId
     actualPreviousFuelGaugeReading = prevReadingData.calculatedPreviousReading;
 
-    if (actualPreviousFuelGaugeReading !== null && currentReading > actualPreviousFuelGaugeReading) {
-      return res.status(400).json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။ (အလိုအလျောက် တွက်ချက်ထားသော)" });
+    if (
+      actualPreviousFuelGaugeReading !== null &&
+      currentReading > actualPreviousFuelGaugeReading
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။ (အလိုအလျောက် တွက်ချက်ထားသော)",
+        });
     }
   }
 
@@ -1674,30 +2477,53 @@ app.post('/api/fuel-readings', async (req, res) => {
     }
 
     // Fetch km_travelled for the current trip
-    const trip = await dbGet(`SELECT km_travelled FROM trips WHERE id = ?`, [tripId]);
+    const trip = await dbGet(`SELECT km_travelled FROM trips WHERE id = ?`, [
+      tripId,
+    ]);
     const kmTravelled = trip ? trip.km_travelled : null; // Use km_travelled from trips
 
     let kmPerGallon = null;
-    if (kmTravelled !== null && fuelConsumedGallons !== null && fuelConsumedGallons > 0) {
+    if (
+      kmTravelled !== null &&
+      fuelConsumedGallons !== null &&
+      fuelConsumedGallons > 0
+    ) {
       kmPerGallon = kmTravelled / fuelConsumedGallons;
     }
 
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       INSERT INTO fuel_readings (car_no, trip_id, reading_date, reading_time, fuel_gauge_reading,
                                  previous_fuel_gauge_reading, fuel_consumed_gallons,
                                  km_per_gallon, remarks)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [carNo, tripId, readingDate, readingTime, currentReading,
-      actualPreviousFuelGaugeReading, fuelConsumedGallons,
-      kmPerGallon, remarks]);
+    `,
+      [
+        carNo,
+        tripId,
+        readingDate,
+        readingTime,
+        currentReading,
+        actualPreviousFuelGaugeReading,
+        fuelConsumedGallons,
+        kmPerGallon,
+        remarks,
+      ]
+    );
 
     res.status(201).json({
       message: "Fuel reading added successfully",
-      id: result.id
+      id: result.id,
     });
   } catch (err) {
-    if (err.message.includes("UNIQUE constraint failed: fuel_readings.trip_id")) {
-      return res.status(409).json({ error: "ဤခရီးစဉ်အတွက် ဆီစားနှုန်းမှတ်တမ်း ရှိပြီးသားဖြစ်ပါသည်။" });
+    if (
+      err.message.includes("UNIQUE constraint failed: fuel_readings.trip_id")
+    ) {
+      return res
+        .status(409)
+        .json({
+          error: "ဤခရီးစဉ်အတွက် ဆီစားနှုန်းမှတ်တမ်း ရှိပြီးသားဖြစ်ပါသည်။",
+        });
     }
     console.error("Error inserting fuel reading:", err.message);
     res.status(500).json({ error: err.message });
@@ -1705,8 +2531,17 @@ app.post('/api/fuel-readings', async (req, res) => {
 });
 
 // API endpoint to get all fuel readings with trip details (for FuelConsumptionPage)
-app.get('/api/fuel-readings', async (req, res) => {
-  const { page = 1, limit = 50, carNo, month, year, tripId, sortBy = 'reading_date', sortOrder = 'desc' } = req.query;
+app.get("/api/fuel-readings", async (req, res) => {
+  const {
+    page = 1,
+    limit = 50,
+    carNo,
+    month,
+    year,
+    tripId,
+    sortBy = "reading_date",
+    sortOrder = "desc",
+  } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
   let whereClauses = [];
@@ -1714,31 +2549,45 @@ app.get('/api/fuel-readings', async (req, res) => {
 
   // Filtering
   if (carNo) {
-    whereClauses.push('fr.car_no = ?');
+    whereClauses.push("fr.car_no = ?");
     params.push(carNo);
   }
   if (month && year) {
     whereClauses.push("strftime('%Y-%m', fr.reading_date) = ?");
-    params.push(`${year}-${String(month).padStart(2, '0')}`);
+    params.push(`${year}-${String(month).padStart(2, "0")}`);
   } else if (year) {
     whereClauses.push("strftime('%Y', fr.reading_date) = ?");
     params.push(year);
   }
   if (tripId) {
-    whereClauses.push('fr.trip_id = ?');
+    whereClauses.push("fr.trip_id = ?");
     params.push(tripId);
   }
 
-  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const whereSql =
+    whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
   // Sorting - Ensure valid columns are used
-  const validSortColumns = ['reading_date', 'car_no', 'km_travelled', 'fuel_consumed_gallons', 'km_per_gallon'];
-  const orderBy = validSortColumns.includes(sortBy) ? sortBy : 'reading_date';
-  const order = (sortOrder && (sortOrder.toLowerCase() === 'asc' || sortOrder.toLowerCase() === 'desc')) ? sortOrder.toUpperCase() : 'DESC';
+  const validSortColumns = [
+    "reading_date",
+    "car_no",
+    "km_travelled",
+    "fuel_consumed_gallons",
+    "km_per_gallon",
+  ];
+  const orderBy = validSortColumns.includes(sortBy) ? sortBy : "reading_date";
+  const order =
+    sortOrder &&
+      (sortOrder.toLowerCase() === "asc" || sortOrder.toLowerCase() === "desc")
+      ? sortOrder.toUpperCase()
+      : "DESC";
 
   try {
     // Get total count for pagination
-    const totalCountRow = await dbGet(`SELECT COUNT(*) as count FROM fuel_readings fr LEFT JOIN trips t ON fr.trip_id = t.id ${whereSql}`, params);
+    const totalCountRow = await dbGet(
+      `SELECT COUNT(*) as count FROM fuel_readings fr LEFT JOIN trips t ON fr.trip_id = t.id ${whereSql}`,
+      params
+    );
     const totalCount = totalCountRow ? totalCountRow.count : 0;
 
     // Fetch fuel readings with joined trip data, applying filtering, sorting, and pagination directly in SQL
@@ -1754,7 +2603,7 @@ app.get('/api/fuel-readings', async (req, res) => {
          fr.fuel_consumed_gallons,       -- Directly fetch stored value
          fr.km_per_gallon,               -- Directly fetch stored value
          fr.remarks,
-         t.date AS trip_date,
+         t.start_date AS trip_date,
          t.start_time AS trip_start_time, -- NEW: Fetch trip start time
          t.from_location,
          t.to_location,
@@ -1775,7 +2624,7 @@ app.get('/api/fuel-readings', async (req, res) => {
 });
 
 // API endpoint to get a single fuel reading by ID (for FuelConsumptionPage edit logic)
-app.get('/api/fuel-readings/:id', async (req, res) => {
+app.get("/api/fuel-readings/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const query = `
@@ -1790,7 +2639,7 @@ app.get('/api/fuel-readings/:id', async (req, res) => {
         fr.fuel_consumed_gallons,
         fr.km_per_gallon,
         fr.remarks,
-        t.date AS trip_date,
+        t.start_date AS trip_date,
         t.start_time AS trip_start_time, -- NEW: Fetch trip start time
         t.from_location,
         t.to_location,
@@ -1812,31 +2661,61 @@ app.get('/api/fuel-readings/:id', async (req, res) => {
 });
 
 // API endpoint to get the previous fuel reading for a specific car based on date and time
-app.get('/api/fuel-readings-previous/:carNo', async (req, res) => {
+app.get("/api/fuel-readings-previous/:carNo", async (req, res) => {
   const { carNo } = req.params;
   const { readingDate, readingTime } = req.query; // Date and time of the *current* reading being entered
 
   if (!carNo || !readingDate || !readingTime) {
-    return res.status(400).json({ error: "Car number, reading date, and reading time are required." });
+    return res
+      .status(400)
+      .json({
+        error: "Car number, reading date, and reading time are required.",
+      });
   }
 
   try {
-    const prevReadingData = await getCalculatedPreviousFuelReading(carNo, readingDate, readingTime, null); // Pass null for currentReadingId
-    res.json({ message: "success", data: { fuel_gauge_reading: prevReadingData.calculatedPreviousReading } });
+    const prevReadingData = await getCalculatedPreviousFuelReading(
+      carNo,
+      readingDate,
+      readingTime,
+      null
+    ); // Pass null for currentReadingId
+    res.json({
+      message: "success",
+      data: { fuel_gauge_reading: prevReadingData.calculatedPreviousReading },
+    });
   } catch (err) {
     console.error("Error fetching previous fuel reading:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // API endpoint to update a fuel reading (for FuelConsumptionPage)
-app.put('/api/fuel-readings/:id', async (req, res) => {
+app.put("/api/fuel-readings/:id", async (req, res) => {
   const { id } = req.params;
-  const { carNo, tripId, readingDate, readingTime, fuelGaugeReading, previousFuelGaugeReading, remarks } = req.body;
+  const {
+    carNo,
+    tripId,
+    readingDate,
+    readingTime,
+    fuelGaugeReading,
+    previousFuelGaugeReading,
+    remarks,
+  } = req.body;
 
-  if (!carNo || !readingDate || !readingTime || fuelGaugeReading === undefined || fuelGaugeReading === null) {
-    return res.status(400).json({ error: "Required fields (carNo, readingDate, readingTime, fuelGaugeReading) cannot be empty." });
+  if (
+    !carNo ||
+    !readingDate ||
+    !readingTime ||
+    fuelGaugeReading === undefined ||
+    fuelGaugeReading === null
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "Required fields (carNo, readingDate, readingTime, fuelGaugeReading) cannot be empty.",
+      });
   }
 
   const currentReading = parseFloat(fuelGaugeReading);
@@ -1845,36 +2724,71 @@ app.put('/api/fuel-readings/:id', async (req, res) => {
   }
 
   if (currentReading > 20) {
-    return res.status(400).json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ၂၀ ဂါလံထက် မများရပါ။" });
+    return res
+      .status(400)
+      .json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ၂၀ ဂါလံထက် မများရပါ။" });
   }
 
   let actualPreviousFuelGaugeReading = null;
 
   // If previousFuelGaugeReading is explicitly provided in the request body (manual input)
-  if (previousFuelGaugeReading !== undefined && previousFuelGaugeReading !== null && previousFuelGaugeReading !== '') {
+  if (
+    previousFuelGaugeReading !== undefined &&
+    previousFuelGaugeReading !== null &&
+    previousFuelGaugeReading !== ""
+  ) {
     actualPreviousFuelGaugeReading = parseFloat(previousFuelGaugeReading);
     if (isNaN(actualPreviousFuelGaugeReading)) {
-      return res.status(400).json({ error: "Invalid previousFuelGaugeReading value." });
+      return res
+        .status(400)
+        .json({ error: "Invalid previousFuelGaugeReading value." });
     }
     if (currentReading > actualPreviousFuelGaugeReading) {
-      return res.status(400).json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။" });
+      return res
+        .status(400)
+        .json({
+          error:
+            "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။",
+        });
     }
   } else {
     // Auto-fetch previous reading and sum fuel_logs if not provided manually
-    const prevReadingData = await getCalculatedPreviousFuelReading(carNo, readingDate, readingTime, id); // Pass currentReadingId for update
+    const prevReadingData = await getCalculatedPreviousFuelReading(
+      carNo,
+      readingDate,
+      readingTime,
+      id
+    ); // Pass currentReadingId for update
     actualPreviousFuelGaugeReading = prevReadingData.calculatedPreviousReading;
 
-    if (actualPreviousFuelGaugeReading !== null && currentReading > actualPreviousFuelGaugeReading) {
-      return res.status(400).json({ error: "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။ (အလိုအလျောက် တွက်ချက်ထားသော)" });
+    if (
+      actualPreviousFuelGaugeReading !== null &&
+      currentReading > actualPreviousFuelGaugeReading
+    ) {
+      return res
+        .status(400)
+        .json({
+          error:
+            "ယခုဆီတိုင်းအမှတ် (ဂါလံ) သည် ယခင်ဆီတိုင်းအမှတ် (ဂါလံ) ထက် မများရပါ။ (အလိုအလျောက် တွက်ချက်ထားသော)",
+        });
     }
   }
 
   try {
     // Check if the new tripId is already associated with another reading (unless it's the current reading's tripId)
-    if (tripId) { // Only check if tripId is provided
-      const existingReadingForTrip = await dbGet('SELECT id FROM fuel_readings WHERE trip_id = ? AND id != ?', [tripId, id]);
+    if (tripId) {
+      // Only check if tripId is provided
+      const existingReadingForTrip = await dbGet(
+        "SELECT id FROM fuel_readings WHERE trip_id = ? AND id != ?",
+        [tripId, id]
+      );
       if (existingReadingForTrip) {
-        return res.status(409).json({ error: "ရွေးချယ်ထားသော ခရီးစဉ်အတွက် ဆီစားနှုန်းမှတ်တမ်း ရှိပြီးသားဖြစ်ပါသည်။" });
+        return res
+          .status(409)
+          .json({
+            error:
+              "ရွေးချယ်ထားသော ခရီးစဉ်အတွက် ဆီစားနှုန်းမှတ်တမ်း ရှိပြီးသားဖြစ်ပါသည်။",
+          });
       }
     }
 
@@ -1884,15 +2798,22 @@ app.put('/api/fuel-readings/:id', async (req, res) => {
     }
 
     // Fetch km_travelled for the current trip
-    const trip = await dbGet(`SELECT km_travelled FROM trips WHERE id = ?`, [tripId]);
+    const trip = await dbGet(`SELECT km_travelled FROM trips WHERE id = ?`, [
+      tripId,
+    ]);
     const kmTravelled = trip ? trip.km_travelled : null; // Use km_travelled from trips
 
     let kmPerGallon = null;
-    if (kmTravelled !== null && fuelConsumedGallons !== null && fuelConsumedGallons > 0) {
+    if (
+      kmTravelled !== null &&
+      fuelConsumedGallons !== null &&
+      fuelConsumedGallons > 0
+    ) {
       kmPerGallon = kmTravelled / fuelConsumedGallons;
     }
 
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       UPDATE fuel_readings SET
         car_no = ?,
         trip_id = ?,
@@ -1904,16 +2825,27 @@ app.put('/api/fuel-readings/:id', async (req, res) => {
         km_per_gallon = ?,
         remarks = ?
       WHERE id = ?
-    `, [carNo, tripId, readingDate, readingTime, currentReading,
-      actualPreviousFuelGaugeReading, fuelConsumedGallons,
-      kmPerGallon, remarks, id]);
+    `,
+      [
+        carNo,
+        tripId,
+        readingDate,
+        readingTime,
+        currentReading,
+        actualPreviousFuelGaugeReading,
+        fuelConsumedGallons,
+        kmPerGallon,
+        remarks,
+        id,
+      ]
+    );
 
     if (result.changes === 0) {
       return res.status(404).json({ message: "Fuel reading not found." });
     }
     res.json({
       message: "Fuel reading updated successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
     console.error("Error updating fuel reading:", err.message);
@@ -1922,7 +2854,7 @@ app.put('/api/fuel-readings/:id', async (req, res) => {
 });
 
 // API endpoint to delete a fuel reading (for FuelConsumptionPage)
-app.delete('/api/fuel-readings/:id', async (req, res) => {
+app.delete("/api/fuel-readings/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const result = await dbRun(`DELETE FROM fuel_readings WHERE id = ?`, id);
@@ -1931,7 +2863,7 @@ app.delete('/api/fuel-readings/:id', async (req, res) => {
     }
     res.json({
       message: "Fuel reading deleted successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
     console.error("Error deleting fuel reading:", err.message);
@@ -1940,16 +2872,19 @@ app.delete('/api/fuel-readings/:id', async (req, res) => {
 });
 
 // API endpoint to get trips that do not have a fuel reading yet for a specific car (for FuelConsumptionPage)
-app.get('/api/trips-without-fuel-reading/:carNo', async (req, res) => {
+app.get("/api/trips-without-fuel-reading/:carNo", async (req, res) => {
   const { carNo } = req.params;
   try {
-    const trips = await dbAll(`
+    const trips = await dbAll(
+      `
       SELECT t.*
       FROM trips t
       LEFT JOIN fuel_readings fr ON t.id = fr.trip_id
       WHERE t.car_no = ? AND fr.trip_id IS NULL
-      ORDER BY t.date DESC;
-    `, [carNo]);
+      ORDER BY t.start_date DESC;
+    `,
+      [carNo]
+    );
     res.json({ message: "success", data: trips });
   } catch (err) {
     console.error("Error fetching trips without fuel reading:", err.message);
@@ -1958,10 +2893,12 @@ app.get('/api/trips-without-fuel-reading/:carNo', async (req, res) => {
 });
 
 // NEW: API endpoint to get trips for a specific car, year, and month (for FuelConsumptionPage filter dropdown)
-app.get('/api/trips-by-car-month/:carNo/:year/:month', async (req, res) => {
+app.get("/api/trips-by-car-month/:carNo/:year/:month", async (req, res) => {
   const { carNo, year, month } = req.params;
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endDate = new Date(year, parseInt(month, 10), 0)
+    .toISOString()
+    .split("T")[0];
 
   try {
     const trips = await dbAll(
@@ -1976,13 +2913,15 @@ app.get('/api/trips-by-car-month/:carNo/:year/:month', async (req, res) => {
   }
 });
 
-
 // API endpoint to get a single trip by ID (needed for FuelConsumptionPage edit logic)
-app.get('/api/trips/:id', async (req, res) => {
+app.get("/api/trips/:id", async (req, res) => {
   const { id } = req.params;
   try {
     // Include empty_handling_location, start_time, end_date, end_time in the select statement
-    const trip = await dbGet(`SELECT *, empty_handling_location, start_time, end_date, end_time FROM trips WHERE id = ?`, [id]);
+    const trip = await dbGet(
+      `SELECT *, empty_handling_location, start_time, end_date, end_time FROM trips WHERE id = ?`,
+      [id]
+    );
     if (trip) {
       res.json({ message: "success", data: trip });
     } else {
@@ -1994,9 +2933,8 @@ app.get('/api/trips/:id', async (req, res) => {
   }
 });
 
-
 // API endpoint to add a new driver
-app.post('/api/drivers', async (req, res) => {
+app.post("/api/drivers", async (req, res) => {
   const { name, monthly_salary, salaryEffectiveDate } = req.body;
   if (!name) {
     return res.status(400).json({ error: "Driver name is required." });
@@ -2004,10 +2942,17 @@ app.post('/api/drivers', async (req, res) => {
 
   // Validate and parse monthly_salary
   let parsedMonthlySalary = null;
-  if (monthly_salary !== undefined && monthly_salary !== null && monthly_salary !== '') {
+  if (
+    monthly_salary !== undefined &&
+    monthly_salary !== null &&
+    monthly_salary !== ""
+  ) {
     parsedMonthlySalary = parseFloat(monthly_salary);
-    if (isNaN(parsedMonthlySalary) || parsedMonthlySalary < 0) { // Ensure non-negative
-      return res.status(400).json({ error: "Monthly salary must be a valid non-negative number." });
+    if (isNaN(parsedMonthlySalary) || parsedMonthlySalary < 0) {
+      // Ensure non-negative
+      return res
+        .status(400)
+        .json({ error: "Monthly salary must be a valid non-negative number." });
     }
   } else {
     // If monthly_salary is explicitly empty/null, treat as 0 or allow null depending on schema
@@ -2016,28 +2961,40 @@ app.post('/api/drivers', async (req, res) => {
 
   try {
     // Check if driver name already exists
-    const existingDriver = await dbGet(`SELECT id FROM drivers WHERE name = ?`, [name]);
+    const existingDriver = await dbGet(
+      `SELECT id FROM drivers WHERE name = ?`,
+      [name]
+    );
     if (existingDriver) {
-      return res.status(409).json({ error: "Driver with this name already exists." });
+      return res
+        .status(409)
+        .json({ error: "Driver with this name already exists." });
     }
 
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       INSERT INTO drivers (name, monthly_salary)
       VALUES (?, ?)
-    `, [name, parsedMonthlySalary]); // Use parsedMonthlySalary here
+    `,
+      [name, parsedMonthlySalary]
+    ); // Use parsedMonthlySalary here
 
     // Also add an initial salary record if a valid salary was provided (or default 0)
-    if (parsedMonthlySalary !== null) { // This will always be true if parsedMonthlySalary is set to 0 or a number
-      const today = new Date().toISOString().split('T')[0];
-      await dbRun(`
+    if (parsedMonthlySalary !== null) {
+      // This will always be true if parsedMonthlySalary is set to 0 or a number
+      const today = new Date().toISOString().split("T")[0];
+      await dbRun(
+        `
         INSERT INTO driver_salary_history (driver_id, salary_amount, effective_start_date, effective_end_date)
         VALUES (?, ?, ?, NULL)
-      `, [result.id, parsedMonthlySalary, salaryEffectiveDate]);
+      `,
+        [result.id, parsedMonthlySalary, salaryEffectiveDate]
+      );
     }
 
     res.status(201).json({
       message: "Driver added successfully",
-      id: result.id // Return 'id' as expected by frontend
+      id: result.id, // Return 'id' as expected by frontend
     });
   } catch (err) {
     console.error("Error inserting driver:", err.message);
@@ -2046,7 +3003,7 @@ app.post('/api/drivers', async (req, res) => {
 });
 
 // API endpoint to get all drivers (now includes current monthly_salary from history)
-app.get('/api/drivers', async (req, res) => {
+app.get("/api/drivers", async (req, res) => {
   try {
     const query = `
       SELECT
@@ -2063,7 +3020,7 @@ app.get('/api/drivers', async (req, res) => {
     const rows = await dbAll(query);
     res.json({
       message: "success",
-      data: rows
+      data: rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2071,7 +3028,7 @@ app.get('/api/drivers', async (req, res) => {
 });
 
 // API endpoint to update a driver (only name can be updated directly here)
-app.put('/api/drivers/:id', async (req, res) => {
+app.put("/api/drivers/:id", async (req, res) => {
   const { id } = req.params;
   const { name } = req.body; // monthly_salary is now handled by salary history
 
@@ -2081,12 +3038,18 @@ app.put('/api/drivers/:id', async (req, res) => {
 
   try {
     // Check for duplicate name if changing
-    const existingDriver = await dbGet(`SELECT id FROM drivers WHERE name = ? AND id != ?`, [name, id]);
+    const existingDriver = await dbGet(
+      `SELECT id FROM drivers WHERE name = ? AND id != ?`,
+      [name, id]
+    );
     if (existingDriver) {
-      return res.status(409).json({ error: "Driver with this name already exists." });
+      return res
+        .status(409)
+        .json({ error: "Driver with this name already exists." });
     }
 
-    const result = await dbRun(`UPDATE drivers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    const result = await dbRun(
+      `UPDATE drivers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [name, id]
     );
     if (result.changes === 0) {
@@ -2094,7 +3057,7 @@ app.put('/api/drivers/:id', async (req, res) => {
     }
     res.json({
       message: "Driver updated successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
     console.error("Error updating driver:", err.message);
@@ -2103,7 +3066,7 @@ app.put('/api/drivers/:id', async (req, res) => {
 });
 
 // API endpoint to delete a driver
-app.delete('/api/drivers/:id', async (req, res) => {
+app.delete("/api/drivers/:id", async (req, res) => {
   const { id } = req.params;
   try {
     // ON DELETE CASCADE will handle deleting related records in car_driver_assignments and driver_salary_history
@@ -2113,7 +3076,7 @@ app.delete('/api/drivers/:id', async (req, res) => {
     }
     res.json({
       message: "Driver deleted successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2121,13 +3084,13 @@ app.delete('/api/drivers/:id', async (req, res) => {
 });
 
 // API endpoint to get all driver names (for dropdowns)
-app.get('/api/driver-names', async (req, res) => {
+app.get("/api/driver-names", async (req, res) => {
   try {
     const rows = await dbAll("SELECT name FROM drivers ORDER BY name ASC");
-    const driverNames = rows.map(row => row.name);
+    const driverNames = rows.map((row) => row.name);
     res.json({
       message: "success",
-      data: driverNames
+      data: driverNames,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2135,18 +3098,35 @@ app.get('/api/driver-names', async (req, res) => {
 });
 
 // NEW: API endpoint to add a new salary history record for a driver
-app.post('/api/driver-salary-history', async (req, res) => {
+app.post("/api/driver-salary-history", async (req, res) => {
   const { driverId, salaryAmount, effectiveStartDate } = req.body;
 
-  if (!driverId || effectiveStartDate === undefined || effectiveStartDate === null || effectiveStartDate === '') {
-    return res.status(400).json({ error: "Driver ID and effective start date are required for salary history." });
+  if (
+    !driverId ||
+    effectiveStartDate === undefined ||
+    effectiveStartDate === null ||
+    effectiveStartDate === ""
+  ) {
+    return res
+      .status(400)
+      .json({
+        error:
+          "Driver ID and effective start date are required for salary history.",
+      });
   }
 
   let parsedSalaryAmount = null;
-  if (salaryAmount !== undefined && salaryAmount !== null && salaryAmount !== '') {
+  if (
+    salaryAmount !== undefined &&
+    salaryAmount !== null &&
+    salaryAmount !== ""
+  ) {
     parsedSalaryAmount = parseFloat(salaryAmount);
-    if (isNaN(parsedSalaryAmount) || parsedSalaryAmount < 0) { // Ensure non-negative
-      return res.status(400).json({ error: "Salary amount must be a valid non-negative number." });
+    if (isNaN(parsedSalaryAmount) || parsedSalaryAmount < 0) {
+      // Ensure non-negative
+      return res
+        .status(400)
+        .json({ error: "Salary amount must be a valid non-negative number." });
     }
   } else {
     return res.status(400).json({ error: "Salary amount is required." });
@@ -2164,13 +3144,18 @@ app.post('/api/driver-salary-history', async (req, res) => {
     if (existingActiveSalary) {
       // Ensure new salary start date is not earlier than or equal to current active salary start date
       if (effectiveStartDate <= existingActiveSalary.effective_start_date) {
-        return res.status(400).json({ error: "New salary effective date must be after the current active salary's start date." });
+        return res
+          .status(400)
+          .json({
+            error:
+              "New salary effective date must be after the current active salary's start date.",
+          });
       }
 
       // Calculate end date for the old salary (one day before new effective start date)
       const oldEndDate = new Date(effectiveStartDate);
       oldEndDate.setDate(oldEndDate.getDate() - 1);
-      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+      const formattedOldEndDate = oldEndDate.toISOString().split("T")[0];
 
       await dbRun(
         `UPDATE driver_salary_history SET effective_end_date = ? WHERE id = ?`,
@@ -2186,25 +3171,35 @@ app.post('/api/driver-salary-history', async (req, res) => {
     );
 
     // Update the monthly_salary in the main drivers table to reflect the new current salary
-    await dbRun(`UPDATE drivers SET monthly_salary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    await dbRun(
+      `UPDATE drivers SET monthly_salary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [parsedSalaryAmount, driverId] // Use parsedSalaryAmount here
     );
 
     res.status(201).json({
       message: "Salary history record added successfully",
-      id: result.id
+      id: result.id,
     });
   } catch (err) {
     console.error("Error adding salary history record:", err.message);
-    if (err.message.includes("UNIQUE constraint failed: driver_salary_history.driver_id, driver_salary_history.effective_start_date")) {
-      return res.status(409).json({ error: "A salary record already exists for this driver starting on this date." });
+    if (
+      err.message.includes(
+        "UNIQUE constraint failed: driver_salary_history.driver_id, driver_salary_history.effective_start_date"
+      )
+    ) {
+      return res
+        .status(409)
+        .json({
+          error:
+            "A salary record already exists for this driver starting on this date.",
+        });
     }
     res.status(500).json({ error: err.message });
   }
 });
 
 // NEW: API endpoint to get salary history for a specific driver
-app.get('/api/driver-salary-history/:driverId', async (req, res) => {
+app.get("/api/driver-salary-history/:driverId", async (req, res) => {
   const { driverId } = req.params;
   try {
     const rows = await dbAll(
@@ -2213,7 +3208,7 @@ app.get('/api/driver-salary-history/:driverId', async (req, res) => {
     );
     res.json({
       message: "success",
-      data: rows
+      data: rows,
     });
   } catch (err) {
     console.error("Error fetching driver salary history:", err.message);
@@ -2221,26 +3216,37 @@ app.get('/api/driver-salary-history/:driverId', async (req, res) => {
   }
 });
 
-
 // API endpoint to assign/update a driver to a car
 // This now handles inserting new assignments or ending previous ones
-app.post('/api/car-driver-assignments', async (req, res) => {
+app.post("/api/car-driver-assignments", async (req, res) => {
   const { carNo, driverName, assignedDate } = req.body;
   if (!carNo || !driverName || !assignedDate) {
-    return res.status(400).json({ error: "Missing required assignment fields (carNo, driverName, assignedDate)." });
+    return res
+      .status(400)
+      .json({
+        error:
+          "Missing required assignment fields (carNo, driverName, assignedDate).",
+      });
   }
 
   try {
     // Find any existing active assignment for this car_no
-    const existingActiveAssignment = await dbGet(`SELECT id, driver_name, assigned_date FROM car_driver_assignments WHERE car_no = ? AND end_date IS NULL`, [carNo]);
+    const existingActiveAssignment = await dbGet(
+      `SELECT id, driver_name, assigned_date FROM car_driver_assignments WHERE car_no = ? AND end_date IS NULL`,
+      [carNo]
+    );
 
     // If an active assignment exists for this car
     if (existingActiveAssignment) {
       // If the car is being assigned to the SAME driver and the assignedDate is the same as current, it's a no-op
-      if (existingActiveAssignment.driver_name === driverName && existingActiveAssignment.assigned_date === assignedDate) {
+      if (
+        existingActiveAssignment.driver_name === driverName &&
+        existingActiveAssignment.assigned_date === assignedDate
+      ) {
         return res.status(200).json({
-          message: "Car is already actively assigned to this driver on this date.",
-          id: existingActiveAssignment.id
+          message:
+            "Car is already actively assigned to this driver on this date.",
+          id: existingActiveAssignment.id,
         });
       }
 
@@ -2249,87 +3255,138 @@ app.post('/api/car-driver-assignments', async (req, res) => {
       // Calculate end date for the old assignment (one day before new assignedDate)
       const oldEndDate = new Date(assignedDate);
       oldEndDate.setDate(oldEndDate.getDate() - 1);
-      const formattedOldEndDate = oldEndDate.toISOString().split('T')[0];
+      const formattedOldEndDate = oldEndDate.toISOString().split("T")[0];
 
       // Ensure the old end date is not before its assigned_date
       if (formattedOldEndDate < existingActiveAssignment.assigned_date) {
-        return res.status(400).json({ error: "New assignment date conflicts with existing active assignment. Please ensure the new assigned date is after the previous assignment's start date." });
+        return res
+          .status(400)
+          .json({
+            error:
+              "New assignment date conflicts with existing active assignment. Please ensure the new assigned date is after the previous assignment's start date.",
+          });
       }
 
-      await dbRun(`
+      await dbRun(
+        `
         UPDATE car_driver_assignments
         SET end_date = ?
         WHERE id = ?
-      `, [formattedOldEndDate, existingActiveAssignment.id]);
-      console.log(`Ended previous assignment (ID: ${existingActiveAssignment.id}) for car ${carNo} before creating new one.`);
+      `,
+        [formattedOldEndDate, existingActiveAssignment.id]
+      );
+      console.log(
+        `Ended previous assignment (ID: ${existingActiveAssignment.id}) for car ${carNo} before creating new one.`
+      );
     }
 
     // Insert the new assignment
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       INSERT INTO car_driver_assignments (car_no, driver_name, assigned_date, end_date)
       VALUES (?, ?, ?, NULL) -- New assignments are active, so end_date is NULL
-    `, [carNo, driverName, assignedDate]);
+    `,
+      [carNo, driverName, assignedDate]
+    );
     res.status(201).json({
       message: "Car-driver assignment added successfully",
-      id: result.id
+      id: result.id,
     });
-
   } catch (err) {
     console.error("Error assigning car to driver:", err.message);
-    if (err.message.includes("UNIQUE constraint failed: car_driver_assignments.car_no, car_driver_assignments.assigned_date")) {
-      return res.status(409).json({ error: "This car is already assigned on this specific date. Please choose a different date or update the existing assignment." });
+    if (
+      err.message.includes(
+        "UNIQUE constraint failed: car_driver_assignments.car_no, car_driver_assignments.assigned_date"
+      )
+    ) {
+      return res
+        .status(409)
+        .json({
+          error:
+            "This car is already assigned on this specific date. Please choose a different date or update the existing assignment.",
+        });
     }
     res.status(500).json({ error: err.message });
   }
 });
 
 // NEW: API endpoint to update the end_date of a car-driver assignment
-app.put('/api/car-driver-assignments/end-date/:carNo', async (req, res) => {
+app.put("/api/car-driver-assignments/end-date/:carNo", async (req, res) => {
   const { carNo } = req.params;
   const { endDate } = req.body;
 
   if (!endDate) {
-    return res.status(400).json({ error: "End date is required for updating assignment." });
+    return res
+      .status(400)
+      .json({ error: "End date is required for updating assignment." });
   }
 
   try {
     // Find the current active assignment for this car
-    const currentAssignment = await dbGet(`SELECT id, assigned_date FROM car_driver_assignments WHERE car_no = ? AND end_date IS NULL`, [carNo]);
+    const currentAssignment = await dbGet(
+      `SELECT id, assigned_date FROM car_driver_assignments WHERE car_no = ? AND end_date IS NULL`,
+      [carNo]
+    );
 
     if (!currentAssignment) {
-      return res.status(404).json({ message: "No active assignment found for this car number." });
+      return res
+        .status(404)
+        .json({ message: "No active assignment found for this car number." });
     }
 
     // Ensure end_date is not before assigned_date
     if (endDate < currentAssignment.assigned_date) {
-      return res.status(400).json({ error: "End date cannot be before the assigned date." });
+      return res
+        .status(400)
+        .json({ error: "End date cannot be before the assigned date." });
     }
 
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       UPDATE car_driver_assignments
       SET end_date = ?
       WHERE id = ? AND end_date IS NULL
-    `, [endDate, currentAssignment.id]);
+    `,
+      [endDate, currentAssignment.id]
+    );
 
     if (result.changes === 0) {
-      return res.status(404).json({ message: "Car assignment not found or no changes made (it might already have an end date)." });
+      return res
+        .status(404)
+        .json({
+          message:
+            "Car assignment not found or no changes made (it might already have an end date).",
+        });
     }
-    res.json({ message: "Car-driver assignment end date updated successfully", id: currentAssignment.id });
+    res.json({
+      message: "Car-driver assignment end date updated successfully",
+      id: currentAssignment.id,
+    });
   } catch (err) {
-    console.error("Error updating car-driver assignment end date:", err.message);
+    console.error(
+      "Error updating car-driver assignment end date:",
+      err.message
+    );
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // API endpoint to delete a car-driver assignment by car_no
 // This is now less frequently used as we prefer updating end_date for historical purposes
-app.delete('/api/car-driver-assignments/:carNo', async (req, res) => {
+app.delete("/api/car-driver-assignments/:carNo", async (req, res) => {
   const { carNo } = req.params;
   try {
-    const result = await dbRun('DELETE FROM car_driver_assignments WHERE car_no = ?', [carNo]);
+    const result = await dbRun(
+      "DELETE FROM car_driver_assignments WHERE car_no = ?",
+      [carNo]
+    );
     if (result.changes === 0) {
-      return res.status(404).json({ message: "error", error: "Car assignment not found for this car number." });
+      return res
+        .status(404)
+        .json({
+          message: "error",
+          error: "Car assignment not found for this car number.",
+        });
     }
     res.json({ message: "success", changes: result.changes });
   } catch (err) {
@@ -2337,14 +3394,15 @@ app.delete('/api/car-driver-assignments/:carNo', async (req, res) => {
   }
 });
 
-
 // API endpoint to get all CURRENT car-driver assignments (where end_date is NULL)
-app.get('/api/car-driver-assignments', async (req, res) => {
+app.get("/api/car-driver-assignments", async (req, res) => {
   try {
-    const rows = await dbAll("SELECT * FROM car_driver_assignments WHERE end_date IS NULL");
+    const rows = await dbAll(
+      "SELECT * FROM car_driver_assignments WHERE end_date IS NULL"
+    );
     res.json({
       message: "success",
-      data: rows
+      data: rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2352,13 +3410,16 @@ app.get('/api/car-driver-assignments', async (req, res) => {
 });
 
 // NEW: API endpoint to get car-driver assignment history for a specific car
-app.get('/api/car-driver-assignments/history/:carNo', async (req, res) => {
+app.get("/api/car-driver-assignments/history/:carNo", async (req, res) => {
   const { carNo } = req.params;
   try {
-    const rows = await dbAll(`SELECT * FROM car_driver_assignments WHERE car_no = ? ORDER BY assigned_date DESC`, [carNo]);
+    const rows = await dbAll(
+      `SELECT * FROM car_driver_assignments WHERE car_no = ? ORDER BY assigned_date DESC`,
+      [carNo]
+    );
     res.json({
       message: "success",
-      data: rows
+      data: rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2366,35 +3427,49 @@ app.get('/api/car-driver-assignments/history/:carNo', async (req, res) => {
 });
 
 // NEW: API endpoint to get car-driver assignment history for a specific driver
-app.get('/api/car-driver-assignments/history/by-driver/:driverId', async (req, res) => {
-  const { driverId } = req.params;
-  try {
-    // First, get the driver's name from their ID
-    const driver = await dbGet(`SELECT name FROM drivers WHERE id = ?`, [driverId]);
-    if (!driver) {
-      return res.status(404).json({ message: "Driver not found." });
+app.get(
+  "/api/car-driver-assignments/history/by-driver/:driverId",
+  async (req, res) => {
+    const { driverId } = req.params;
+    try {
+      // First, get the driver's name from their ID
+      const driver = await dbGet(`SELECT name FROM drivers WHERE id = ?`, [
+        driverId,
+      ]);
+      if (!driver) {
+        return res.status(404).json({ message: "Driver not found." });
+      }
+
+      const rows = await dbAll(
+        `SELECT * FROM car_driver_assignments WHERE driver_name = ? ORDER BY assigned_date DESC`,
+        [driver.name]
+      );
+      res.json({
+        message: "success",
+        data: rows,
+      });
+    } catch (err) {
+      console.error(
+        "Error fetching driver assignment history by driver ID:",
+        err.message
+      );
+      res.status(500).json({ error: err.message });
     }
-
-    const rows = await dbAll(`SELECT * FROM car_driver_assignments WHERE driver_name = ? ORDER BY assigned_date DESC`, [driver.name]);
-    res.json({
-      message: "success",
-      data: rows
-    });
-  } catch (err) {
-    console.error("Error fetching driver assignment history by driver ID:", err.message);
-    res.status(500).json({ error: err.message });
   }
-});
-
+);
 
 // API endpoint to get trips for a specific driver within a month
-app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
+app.get("/api/driver-trips/:driverName/:year/:month", async (req, res) => {
   const { driverName, year, month } = req.params;
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
   // Calculate end date for the month
-  const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
+  const endDate = new Date(year, parseInt(month, 10), 0)
+    .toISOString()
+    .split("T")[0];
 
-  console.log(`[car-maintenance-monthly] CarNo: ${carNo}, Year: ${year}, Month: ${month}, StartDate: ${startDate}, EndDate: ${endDate}`);
+  console.log(
+    `[car-maintenance-monthly] CarNo: ${carNo}, Year: ${year}, Month: ${month}, StartDate: ${startDate}, EndDate: ${endDate}`
+  );
   try {
     // Find the car assigned to this driver during the specified period
     // This query tries to find an assignment that was active at any point within the month.
@@ -2407,13 +3482,14 @@ app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
       [driverName, endDate, startDate]
     );
 
-    if (!assignment) { // If no car is assigned to this driver for the period
+    if (!assignment) {
+      // If no car is assigned to this driver for the period
       return res.json({ message: "success", data: [], total_charge: 0 });
     }
 
     const carNo = assignment.car_no;
     const trips = await dbAll(
-      'SELECT * FROM trips WHERE car_no = ? AND driver_name = ? AND date BETWEEN ? AND ? ORDER BY date DESC',
+      "SELECT * FROM trips WHERE car_no = ? AND driver_name = ? AND date BETWEEN ? AND ? ORDER BY date DESC",
       [carNo, driverName, startDate, endDate]
     );
     const totalCharge = trips.reduce((sum, trip) => sum + trip.total_charge, 0);
@@ -2426,7 +3502,7 @@ app.get('/api/driver-trips/:driverName/:year/:month', async (req, res) => {
 });
 
 // API endpoint to get trips for a specific driver within a year
-app.get('/api/driver-trips-yearly/:driverName/:year', async (req, res) => {
+app.get("/api/driver-trips-yearly/:driverName/:year", async (req, res) => {
   const { driverName, year } = req.params;
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
@@ -2448,7 +3524,7 @@ app.get('/api/driver-trips-yearly/:driverName/:year', async (req, res) => {
 
     const carNo = assignment.car_no;
     const trips = await dbAll(
-      'SELECT * FROM trips WHERE car_no = ? AND driver_name = ? AND date BETWEEN ? AND ? ORDER BY date DESC',
+      "SELECT * FROM trips WHERE car_no = ? AND driver_name = ? AND start_date BETWEEN ? AND ? ORDER BY start_date DESC",
       [carNo, driverName, startDate, endDate]
     );
     const totalCharge = trips.reduce((sum, trip) => sum + trip.total_charge, 0);
@@ -2460,57 +3536,61 @@ app.get('/api/driver-trips-yearly/:driverName/:year', async (req, res) => {
   }
 });
 
-
 // API endpoint to get maintenance costs for a specific car within a month
-app.get('/api/car-maintenance-monthly/:carNo/:year/:month', async (req, res) => {
-  const { carNo, year, month } = req.params;
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
+app.get(
+  "/api/car-maintenance-monthly/:carNo/:year/:month",
+  async (req, res) => {
+    const { carNo, year, month } = req.params;
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const endDate = new Date(year, parseInt(month, 10), 0)
+      .toISOString()
+      .split("T")[0];
 
-  try {
-    const row = await dbGet(
-      'SELECT SUM(cost) AS total_cost FROM car_maintenance WHERE car_no = ? AND maintenance_date BETWEEN ? AND ?',
-      [carNo, startDate, endDate]
-    );
-    const totalCost = row ? (row.total_cost || 0) : 0;
-    res.json({ message: "success", total_cost: totalCost });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    try {
+      const row = await dbGet(
+        "SELECT SUM(cost) AS total_cost FROM car_maintenance WHERE car_no = ? AND maintenance_date BETWEEN ? AND ?",
+        [carNo, startDate, endDate]
+      );
+      const totalCost = row ? row.total_cost || 0 : 0;
+      res.json({ message: "success", total_cost: totalCost });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   }
-});
+);
 
 // API endpoint to get maintenance costs for a specific car within a year
-app.get('/api/car-maintenance-yearly/:carNo/:year', async (req, res) => {
+app.get("/api/car-maintenance-yearly/:carNo/:year", async (req, res) => {
   const { carNo, year } = req.params;
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
 
   try {
     const row = await dbGet(
-      'SELECT SUM(cost) AS total_cost FROM car_maintenance WHERE car_no = ? AND maintenance_date BETWEEN ? AND ?',
+      "SELECT SUM(cost) AS total_cost FROM car_maintenance WHERE car_no = ? AND maintenance_date BETWEEN ? AND ?",
       [carNo, startDate, endDate]
     );
-    const totalCost = row ? (row.total_cost || 0) : 0;
+    const totalCost = row ? row.total_cost || 0 : 0;
     res.json({ message: "success", total_cost: totalCost });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // API endpoint to get fuel costs for a specific car within a month (for CarManagementPage)
 // Modified to use log_datetime
-app.get('/api/fuel-logs-monthly/:carNo/:year/:month', async (req, res) => {
+app.get("/api/fuel-logs-monthly/:carNo/:year/:month", async (req, res) => {
   const { carNo, year } = req.params;
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01 00:00`; // Include time for full datetime comparison
-  const endDate = `${new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0]} 23:59`; // Include time for full datetime comparison
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01 00:00`; // Include time for full datetime comparison
+  const endDate = `${new Date(year, parseInt(month, 10), 0).toISOString().split("T")[0]
+    } 23:59`; // Include time for full datetime comparison
 
   try {
     const row = await dbGet(
-      'SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_datetime BETWEEN ? AND ?',
+      "SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_datetime BETWEEN ? AND ?",
       [carNo, startDate, endDate]
     );
-    const totalFuelCost = row ? (row.total_fuel_cost || 0) : 0;
+    const totalFuelCost = row ? row.total_fuel_cost || 0 : 0;
     res.json({ message: "success", total_fuel_cost: totalFuelCost });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2519,17 +3599,17 @@ app.get('/api/fuel-logs-monthly/:carNo/:year/:month', async (req, res) => {
 
 // API endpoint to get fuel costs for a specific car within a year (for DriverManagementPage)
 // Modified to use log_datetime
-app.get('/api/fuel-logs-yearly/:carNo/:year', async (req, res) => {
+app.get("/api/fuel-logs-yearly/:carNo/:year", async (req, res) => {
   const { carNo, year } = req.params;
   const startDate = `${year}-01-01 00:00`;
   const endDate = `${year}-12-31 23:59`;
 
   try {
     const row = await dbGet(
-      'SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_datetime BETWEEN ? AND ?',
+      "SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs WHERE car_no = ? AND log_datetime BETWEEN ? AND ?",
       [carNo, startDate, endDate]
     );
-    const totalFuelCost = row ? (row.total_fuel_cost || 0) : 0;
+    const totalFuelCost = row ? row.total_fuel_cost || 0 : 0;
     res.json({ message: "success", total_fuel_cost: totalFuelCost });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2537,20 +3617,28 @@ app.get('/api/fuel-logs-yearly/:carNo/:year', async (req, res) => {
 });
 
 // API endpoint to add a new general expense record
-app.post('/api/general-expenses', async (req, res) => {
+app.post("/api/general-expenses", async (req, res) => {
   const { carNo, expenseDate, description, cost, remarks } = req.body;
   if (!carNo || !expenseDate || !description || !cost) {
-    return res.status(400).json({ error: "Missing required general expense fields (carNo, expenseDate, description, cost)." });
+    return res
+      .status(400)
+      .json({
+        error:
+          "Missing required general expense fields (carNo, expenseDate, description, cost).",
+      });
   }
 
   try {
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       INSERT INTO general_expenses (car_no, expense_date, description, cost, remarks)
       VALUES (?, ?, ?, ?, ?)
-    `, [carNo, expenseDate, description, cost, remarks]);
+    `,
+      [carNo, expenseDate, description, cost, remarks]
+    );
     res.status(201).json({
       message: "General expense record added successfully",
-      id: result.id
+      id: result.id,
     });
   } catch (err) {
     console.error("Error inserting general expense record:", err.message);
@@ -2559,16 +3647,26 @@ app.post('/api/general-expenses', async (req, res) => {
 });
 
 // API endpoint to update a general expense record
-app.put('/api/general-expenses/:id', async (req, res) => {
+app.put("/api/general-expenses/:id", async (req, res) => {
   const { id } = req.params;
   const { carNo, expenseDate, description, cost, remarks } = req.body; // description will be the final description
 
-  if (!carNo || !expenseDate || !description || cost === undefined || cost === null) { // Fixed: cost check
-    return res.status(400).json({ error: "Missing required general expense fields for update." });
+  if (
+    !carNo ||
+    !expenseDate ||
+    !description ||
+    cost === undefined ||
+    cost === null
+  ) {
+    // Fixed: cost check
+    return res
+      .status(400)
+      .json({ error: "Missing required general expense fields for update." });
   }
 
   try {
-    const result = await dbRun(`
+    const result = await dbRun(
+      `
       UPDATE general_expenses SET
         car_no = ?,
         expense_date = ?,
@@ -2576,14 +3674,18 @@ app.put('/api/general-expenses/:id', async (req, res) => {
         cost = ?,
         remarks = ?
       WHERE id = ?
-    `, [carNo, expenseDate, description, cost, remarks, id]);
+    `,
+      [carNo, expenseDate, description, cost, remarks, id]
+    );
 
     if (result.changes === 0) {
-      return res.status(404).json({ message: "General expense record not found." });
+      return res
+        .status(404)
+        .json({ message: "General expense record not found." });
     }
     res.json({
       message: "General expense record updated successfully",
-      id: id
+      id: id,
     });
   } catch (err) {
     console.error("Error updating general expense record:", err.message);
@@ -2591,21 +3693,21 @@ app.put('/api/general-expenses/:id', async (req, res) => {
   }
 });
 
-
 // API endpoint to get general expenses for a specific car with filters
 // Modified to include year, month, description, and otherDescription filters
-app.get('/api/general-expenses/:carNo', async (req, res) => {
+app.get("/api/general-expenses/:carNo", async (req, res) => {
   const { carNo } = req.params;
   const { year, month, description, otherDescription } = req.query;
 
-  let whereClauses = ['car_no = ?'];
+  let whereClauses = ["car_no = ?"];
   let params = [carNo];
 
   if (year) {
     if (month) {
       whereClauses.push("strftime('%Y-%m', expense_date) = ?");
-      params.push(`${year}-${String(month).padStart(2, '0')}`);
-    } else { // Filter by year only if month is not provided (or is 'All')
+      params.push(`${year}-${String(month).padStart(2, "0")}`);
+    } else {
+      // Filter by year only if month is not provided (or is 'All')
       whereClauses.push("strftime('%Y', expense_date) = ?");
       params.push(`${year}`);
     }
@@ -2614,24 +3716,27 @@ app.get('/api/general-expenses/:carNo', async (req, res) => {
   if (description) {
     if (description === "အခြား (Other)" && otherDescription) {
       // If "Other" is selected and otherDescription is provided, filter by it
-      whereClauses.push('description LIKE ?');
+      whereClauses.push("description LIKE ?");
       params.push(`%${otherDescription}%`);
     } else if (description !== "အခြား (Other)") {
       // If a specific description (not "Other") is selected, filter by it
-      whereClauses.push('description = ?');
+      whereClauses.push("description = ?");
       params.push(description);
     }
     // If description is "Other" but otherDescription is empty, it means "All other"
     // which is covered by not adding a description filter.
   }
 
-  const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+  const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
 
   try {
-    const rows = await dbAll(`SELECT * FROM general_expenses ${whereSql} ORDER BY expense_date DESC`, params);
+    const rows = await dbAll(
+      `SELECT * FROM general_expenses ${whereSql} ORDER BY expense_date DESC`,
+      params
+    );
     res.json({
       message: "success",
-      data: rows
+      data: rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2639,47 +3744,53 @@ app.get('/api/general-expenses/:carNo', async (req, res) => {
 });
 
 // NEW: API endpoint to get general expenses for a specific car within a month
-app.get('/api/general-expenses-monthly/:carNo/:year/:month', async (req, res) => {
-  const { carNo, year, month } = req.params;
-  const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endDate = new Date(year, parseInt(month, 10), 0).toISOString().split('T')[0];
+app.get(
+  "/api/general-expenses-monthly/:carNo/:year/:month",
+  async (req, res) => {
+    const { carNo, year, month } = req.params;
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const endDate = new Date(year, parseInt(month, 10), 0)
+      .toISOString()
+      .split("T")[0];
 
-  try {
-    const row = await dbGet(
-      'SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?',
-      [carNo, startDate, endDate]
-    );
-    const totalGeneralCost = row ? (row.total_general_cost || 0) : 0;
-    res.json({ message: "success", total_general_cost: totalGeneralCost });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    try {
+      const row = await dbGet(
+        "SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?",
+        [carNo, startDate, endDate]
+      );
+      const totalGeneralCost = row ? row.total_general_cost || 0 : 0;
+      res.json({ message: "success", total_general_cost: totalGeneralCost });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   }
-});
+);
 
 // NEW: API endpoint to get general expenses for a specific car within a year
-app.get('/api/general-expenses-yearly/:carNo/:year', async (req, res) => {
+app.get("/api/general-expenses-yearly/:carNo/:year", async (req, res) => {
   const { carNo, year } = req.params;
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
 
   try {
     const row = await dbGet(
-      'SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?',
+      "SELECT SUM(cost) AS total_general_cost FROM general_expenses WHERE car_no = ? AND expense_date BETWEEN ? AND ?",
       [carNo, startDate, endDate]
     );
-    const totalGeneralCost = row ? (row.total_general_cost || 0) : 0;
+    const totalGeneralCost = row ? row.total_general_cost || 0 : 0;
     res.json({ message: "success", total_general_cost: totalGeneralCost });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-
 // API endpoint for data backup
-app.get('/api/backup', async (req, res) => {
+app.get("/api/backup", async (req, res) => {
   try {
     // Get all table names from the database
-    const tables = await dbAll("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'SQLITE_%'");
+    const tables = await dbAll(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'SQLITE_%'"
+    );
     const backupData = {};
 
     // For each table, fetch all its data
@@ -2690,32 +3801,32 @@ app.get('/api/backup', async (req, res) => {
 
     res.json(backupData);
   } catch (err) {
-    console.error('Backup error:', err.message);
-    res.status(500).json({ error: 'Failed to create backup: ' + err.message });
+    console.error("Backup error:", err.message);
+    res.status(500).json({ error: "Failed to create backup: " + err.message });
   }
 });
 
 // API endpoint for data restore
-app.post('/api/restore', async (req, res) => {
+app.post("/api/restore", async (req, res) => {
   const restoreData = req.body; // Data sent from the frontend
 
   try {
     // Start a transaction to ensure atomicity
-    await dbRun('BEGIN TRANSACTION');
+    await dbRun("BEGIN TRANSACTION");
 
     // Define table names in an order that respects foreign key constraints for deletion (children first)
     const deleteOrderTableNames = [
-      'fuel_readings',             // Depends on trips
-      'car_driver_assignments',    // Depends on drivers
-      'driver_salary_history',     // Depends on drivers (NEW)
-      'trips',
-      'drivers',
-      'car_maintenance',
-      'fuel_logs',
-      'general_expenses',
-      'settings',
-      'route_charges_versions',
-      'empty_charges_versions' // NEW: Empty charges versions
+      "fuel_readings", // Depends on trips
+      "car_driver_assignments", // Depends on drivers
+      "driver_salary_history", // Depends on drivers (NEW)
+      "trips",
+      "drivers",
+      "car_maintenance",
+      "fuel_logs",
+      "general_expenses",
+      "settings",
+      "route_charges_versions",
+      "empty_charges_versions", // NEW: Empty charges versions
     ];
 
     // Clear existing data from tables in the defined order
@@ -2725,17 +3836,17 @@ app.post('/api/restore', async (req, res) => {
 
     // Define table names in an order that respects foreign key constraints for insertion (parents first)
     const insertOrderTableNames = [
-      'trips',
-      'drivers',
-      'driver_salary_history',     // Depends on drivers (NEW)
-      'car_maintenance',
-      'fuel_logs',
-      'general_expenses',
-      'settings',
-      'route_charges_versions',
-      'empty_charges_versions', // NEW: Empty charges versions
-      'car_driver_assignments',    // Depends on drivers
-      'fuel_readings'              // Depends on trips
+      "trips",
+      "drivers",
+      "driver_salary_history", // Depends on drivers (NEW)
+      "car_maintenance",
+      "fuel_logs",
+      "general_expenses",
+      "settings",
+      "route_charges_versions",
+      "empty_charges_versions", // NEW: Empty charges versions
+      "car_driver_assignments", // Depends on drivers
+      "fuel_readings", // Depends on trips
     ];
 
     // Insert new data into tables in the correct order
@@ -2743,24 +3854,67 @@ app.post('/api/restore', async (req, res) => {
       const records = restoreData[tableName];
       if (records && records.length > 0) {
         for (const record of records) {
-          const columns = Object.keys(record).join(', ');
-          const placeholders = Object.keys(record).map(() => '?').join(', ');
+          const columns = Object.keys(record).join(", ");
+          const placeholders = Object.keys(record)
+            .map(() => "?")
+            .join(", ");
           const values = Object.values(record);
 
           // Use INSERT OR REPLACE to handle cases where IDs might conflict if manually provided
           // This also helps in cases where the data might contain existing IDs that need to be preserved.
-          await dbRun(`INSERT OR REPLACE INTO ${tableName} (${columns}) VALUES (${placeholders})`, values);
+          await dbRun(
+            `INSERT OR REPLACE INTO ${tableName} (${columns}) VALUES (${placeholders})`,
+            values
+          );
         }
       }
     }
 
-    await dbRun('COMMIT'); // Commit the transaction
+    await dbRun("COMMIT"); // Commit the transaction
     res.json({ message: "success" });
   } catch (err) {
-    await dbRun('ROLLBACK'); // Rollback on error
-    console.error('Restore error:', err.message);
-    res.status(500).json({ error: 'Failed to restore data: ' + err.message });
+    await dbRun("ROLLBACK"); // Rollback on error
+    console.error("Restore error:", err.message);
+    res.status(500).json({ error: "Failed to restore data: " + err.message });
   }
+});
+
+app.get('/api/agent-names', (req, res) => {
+  // SQLite
+  db.all("SELECT id, name FROM AgentNames", [], (err, rows) => {
+    if (err) {
+      res.status(500).json({ message: "error", error: err.message });
+      return;
+    }
+    res.json({ message: "success", data: rows });
+  });
+});
+
+// POST a new agent name
+app.post('/api/agent-names/add', (req, res) => {
+  const { name } = req.body;
+
+  if (!name || name.trim() === '') {
+    return res.status(400).json({ message: "error", error: "Agent name cannot be empty." });
+  }
+
+  // SQLite: Check for duplicate first, then insert
+  db.get("SELECT name FROM AgentNames WHERE name = ?", [name], (err, row) => {
+    if (err) {
+      return res.status(500).json({ message: "error", error: err.message });
+    }
+    if (row) {
+      return res.status(409).json({ message: "error", error: "This agent name already exists." }); // 409 Conflict
+    }
+
+    db.run("INSERT INTO AgentNames (name) VALUES (?)", [name], function (err) {
+      if (err) {
+        res.status(500).json({ message: "error", error: err.message });
+        return;
+      }
+      res.status(201).json({ message: "success", id: this.lastID, name: name });
+    });
+  });
 });
 
 
