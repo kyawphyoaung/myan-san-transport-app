@@ -839,7 +839,7 @@ function HomePage() {
 
       const {
         empty_locations_charges,
-        same_direction_charges,
+        same_direction_overrides,
         no_charge_routes,
         port_locations,
       } = emptyChargeData;
@@ -906,7 +906,7 @@ function HomePage() {
       }
 
       // 4. Same Direction Extra Charge Logic (Auto-calculation Priority 2)
-      const sameExtraDirectionCharge = same_direction_charges.find(
+      const sameExtraDirectionCharge = same_direction_overrides.find(
         (item) =>
           item.empty_location.includes(emptyLoc) &&
           (item.location_one === from || item.location_one === to)
@@ -1229,9 +1229,7 @@ function HomePage() {
       editFormData.startTime,
       editFormData.endDate,
       editFormData.endTime,
-      editFormData.from,
-      editFormData.to,
-      currentRouteType,
+      currentRouteType, // <-- ဒီအစီအစဉ်အတိုင်း ပြင်ပါ
       editFormData.cargoLoadType,
       editFormData.cargoLoadDate,
       editFormData.cargoLoadTime
@@ -1402,7 +1400,8 @@ function HomePage() {
           startTime: currentTime,
           endDate: today,
           endTime: currentTime,
-          carNo: "",
+          carNo: formData.carNo,
+          driverName: formData.driverName,
           from: "",
           to: "",
           emptyHandlingLocation: "",
@@ -1415,7 +1414,6 @@ function HomePage() {
           dayOverDelayedCount: 0,
           remarks: "",
           agentName: "",
-          driverName: "",
           routeCharge: 0,
           emptyCharge: 0,
           totalCharge: 0,
@@ -3095,7 +3093,10 @@ function HomePage() {
                                     <span>ပတ်မောင်း</span>
                                   ) : trip.cargo_load_type === "custom" ? (
                                     <span>
-                                      {trip.cargo_load_date.split("-")[2]}{" "}
+                                      {parseInt(
+                                        trip.cargo_load_date.split("-")[2],
+                                        10
+                                      )}{" "}
                                       ရက်နေ့တင်
                                     </span>
                                   ) : trip.trip_type === "tinSit" ? (
@@ -3426,7 +3427,11 @@ function HomePage() {
                                 <span>ပတ်မောင်း</span>
                               ) : trip.cargo_load_type === "custom" ? (
                                 <span>
-                                  {trip.cargo_load_date.split("-")[2]} ရက်နေ့တင်
+                                  {parseInt(
+                                    trip.cargo_load_date.split("-")[2],
+                                    10
+                                  )}{" "}
+                                  ရက်နေ့တင်
                                 </span>
                               ) : trip.trip_type === "tinSit" ? (
                                 <span>တင်စစ်</span>
@@ -3525,13 +3530,54 @@ function HomePage() {
         aria-labelledby="alert-dialog-title"
         aria-describedby="alert-dialog-description"
       >
-        <DialogTitle id="alert-dialog-title">
+        <DialogTitle id="alert-dialog-title" style={{ textAlign: "center" }}>
           {"ခရီးစဉ်မှတ်တမ်း ဖျက်သိမ်းခြင်း"}
         </DialogTitle>
         <DialogContent>
           <DialogContentText id="alert-dialog-description">
-            ရက်စွဲ {tripToDelete?.date}၊ ကားနံပါတ် {tripToDelete?.car_no}{" "}
-            ခရီးစဉ်မှတ်တမ်းကို ဖျက်သိမ်းမှာ သေချာပါသလား။
+            <span
+              style={{
+                color: "orange",
+                display: "inline-block",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "5px",
+                }}
+              >
+                <span style={{ marginRight: "20px" }}>ခရီးစဥ်:</span>
+                <span style={{ color: "white" }}>T{tripToDelete?.id}</span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "5px",
+                }}
+              >
+                <span style={{ marginRight: "20px" }}>ရက်စွဲ:</span>
+                <span style={{ color: "white" }}>
+                  {formatDateForDisplay(tripToDelete?.start_date)}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "5px",
+                }}
+              >
+                <span style={{ marginRight: "20px" }}>ကားနံပါတ်:</span>
+                <span style={{ color: "white" }}>{tripToDelete?.car_no}</span>
+              </div>
+              <div style={{ marginTop: "10px" }}>
+                ခရီးစဉ်မှတ်တမ်းကို ဖျက်သိမ်းမှာ သေချာပါသလား။
+              </div>
+            </span>
           </DialogContentText>
         </DialogContent>
         <DialogActions>

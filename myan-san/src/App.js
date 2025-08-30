@@ -9,6 +9,7 @@ import FuelConsumptionPage from './pages/FuelConsumptionPage';
 import SettingsPage from './pages/SettingsPage';
 import RouteChargesManagementPage from './pages/RouteChargesManagementPage';
 import EmptyChargeManagementPage from './pages/EmptyChargeManagementPage';
+import DashboardPage from './pages/DashboardPage';
 import DeveloperPage from './pages/DeveloperPage'; // DeveloperPage ကို import လုပ်သည်
 import './index.css';
 
@@ -37,8 +38,10 @@ function App() {
         return <EmptyChargeManagementPage />;
       case 'settings':
         return <SettingsPage />;
-      case 'developer': // DeveloperPage အတွက် case အသစ် ထည့်သွင်းသည်
+      case 'developer':
         return <DeveloperPage />;
+      case 'dashboard': 
+        return <DashboardPage />;
       default:
         return <HomePage />;
     }

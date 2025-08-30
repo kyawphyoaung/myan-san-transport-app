@@ -203,40 +203,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
             console.error("Error creating fuel_logs table:", err.message);
           else {
             console.log("Fuel_logs table created or already exists.");
-            // Migration logic: If log_date exists but log_datetime doesn't, migrate data
-            db.all(`PRAGMA table_info(fuel_logs)`, async (err, columns) => {
-              if (err) {
-                console.error(
-                  "Error checking table info for fuel_logs:",
-                  err.message
-                );
-                return;
-              }
-              const columnNames = columns.map((col) => col.name);
-              const hasLogDate = columnNames.includes("log_date");
-              const hasLogDatetime = columnNames.includes("log_datetime");
-              if (hasLogDate && !hasLogDatetime) {
-                console.log(
-                  "Migrating fuel_logs data: Adding log_datetime column and populating it."
-                );
-                try {
-                  await dbRun(
-                    `ALTER TABLE fuel_logs ADD COLUMN log_datetime TEXT`
-                  );
-                  await dbRun(
-                    `UPDATE fuel_logs SET log_datetime = log_date || ' 00:00' WHERE log_datetime IS NULL`
-                  );
-                  console.log("Fuel_logs migration to log_datetime completed.");
-                } catch (migrateErr) {
-                  console.error(
-                    "Error during fuel_logs migration:",
-                    migrateErr.message
-                  );
-                }
-              } else if (hasLogDatetime) {
-                console.log("Fuel_logs table already has log_datetime.");
-              }
-            });
           }
         }
       );
@@ -317,7 +283,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
           else {
             console.log("AgentNames table created or already exists.");
             // Insert a dummy agent if not exists
-            const dummyAgents = ["ကိုစိုင်း", "ကိုရာဇာ", "ကျော်သူနိုင်"]; // Updated dummy data
+            const dummyAgents = ["တရုတ်ကြီး","ကျော်သူနိုင်","ဖိုးချမ်း"]; // Updated dummy data
             dummyAgents.forEach(agentName => {
             db.run(
               `INSERT OR IGNORE INTO AgentNames (name) VALUES (?)`,
@@ -356,14 +322,14 @@ const db = new sqlite3.Database(dbPath, (err) => {
             // Insert a dummy driver if not exists
             db.run(
               `INSERT OR IGNORE INTO drivers (name) VALUES (?)`,
-              ["John Doe"], // ယာဉ်မောင်းအမည်
+              ["ဝင်းခိုင်"], // ယာဉ်မောင်းအမည်
               function (insertErr) {
                 if (insertErr) {
                   console.error("Error inserting dummy driver:", insertErr.message);
                 } else if (this.changes > 0) {
-                  console.log("Dummy driver 'John Doe' inserted.");
+                  console.log("Dummy driver 'ဝင်းခိုင်' inserted.");
                 } else {
-                  console.log("Dummy driver 'John Doe' already exists.");
+                  console.log("Dummy driver 'ဝင်းခိုင်' already exists.");
                 }
               }
             );
@@ -703,7 +669,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
             // Insert dummy data into car_driver_assignments
             const dummyCarNo = "6G-8202";
-            const dummyDriverName = "John Doe"; // drivers table ထဲက driver name နဲ့ တူရပါမယ်
+            const dummyDriverName = "ဝင်းခိုင်"; // drivers table ထဲက driver name နဲ့ တူရပါမယ်
             const dummyAssignedDate = "2024-07-01"; // စတင်သတ်မှတ်သည့်ရက်စွဲ
             const dummyEndDate = null; // လက်ရှိ assign လုပ်ထားဆဲဖြစ်ပါက null
 
@@ -3915,6 +3881,321 @@ app.post('/api/agent-names/add', (req, res) => {
       res.status(201).json({ message: "success", id: this.lastID, name: name });
     });
   });
+});
+
+//For Dashboard
+// Define Port Locations for Export/Import logic
+const PORT_LOCATIONS = ['အေးရှားဝေါ', 'MIP', 'သီလဝါ'];
+
+// Helper to get monthly summary data for a given year and month
+async function _getMonthlySummaryData(year, month) {
+  const monthPadded = String(month).padStart(2, '0');
+  const startDate = `${year}-${monthPadded}-01`;
+  const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+
+  const monthlyTripsCountRow = await dbGet(`
+    SELECT COUNT(*) as count FROM trips
+    WHERE start_date BETWEEN ? AND ?
+  `, [startDate, endDate]);
+  const monthlyTripsCount = monthlyTripsCountRow ? monthlyTripsCountRow.count : 0;
+
+  const monthlyRevenueSumRow = await dbGet(`
+    SELECT SUM(total_charge) as sum_total_charge FROM trips
+    WHERE start_date BETWEEN ? AND ?
+  `, [startDate, endDate]);
+  const monthlyRevenueSum = monthlyRevenueSumRow ? monthlyRevenueSumRow.sum_total_charge || 0 : 0;
+
+  // Monthly Expenses (Fuel, Maintenance, General)
+  const monthlyFuelCostRow = await dbGet(`
+    SELECT SUM(fuel_cost) AS total_fuel_cost FROM fuel_logs
+    WHERE log_datetime BETWEEN '${startDate} 00:00' AND '${endDate} 23:59'
+  `);
+  const monthlyFuelCost = monthlyFuelCostRow ? monthlyFuelCostRow.total_fuel_cost || 0 : 0;
+
+  const monthlyMaintenanceCostRow = await dbGet(`
+    SELECT SUM(cost) AS total_cost FROM car_maintenance
+    WHERE maintenance_date BETWEEN ? AND ?
+  `, [startDate, endDate]);
+  const monthlyMaintenanceCost = monthlyMaintenanceCostRow ? monthlyMaintenanceCostRow.total_cost || 0 : 0;
+
+  const monthlyGeneralExpensesRow = await dbGet(`
+    SELECT SUM(cost) AS total_general_cost FROM general_expenses
+    WHERE expense_date BETWEEN ? AND ?
+  `, [startDate, endDate]);
+  const monthlyGeneralExpenses = monthlyGeneralExpensesRow ? monthlyGeneralExpensesRow.total_general_cost || 0 : 0;
+
+  const monthlyDriverSalaries = await dbAll(`
+    SELECT d.monthly_salary FROM drivers d
+  `); // Assuming monthly_salary from drivers table is current monthly salary
+  const totalMonthlyDriverSalaries = monthlyDriverSalaries.reduce((sum, driver) => sum + (driver.monthly_salary || 0), 0);
+
+  const monthlyExpensesSum = monthlyFuelCost + monthlyMaintenanceCost + monthlyGeneralExpenses + totalMonthlyDriverSalaries;
+  const monthlyNetRevenueSum = monthlyRevenueSum - monthlyExpensesSum;
+
+  return {
+    monthlyTripsCount,
+    monthlyRevenueSum,
+    monthlyExpensesSum,
+    monthlyNetRevenueSum,
+  };
+}
+
+// Helper to get route type (Export/Import) revenue breakdown
+function _getRouteTypeRevenueData(trips) {
+  const routeTypeRevenue = {
+    'Export': 0,
+    'Import': 0,
+    'အခြား': 0, // Other trips not categorized as Export/Import
+  };
+
+  trips.forEach(trip => {
+    let type = 'အခြား';
+    const toLocation = trip.to_location;
+    const fromLocation = trip.from_location;
+    const totalCharge = trip.total_charge || 0;
+
+    if (PORT_LOCATIONS.includes(toLocation)) {
+      type = 'Export';
+    } else if (PORT_LOCATIONS.includes(fromLocation)) {
+      type = 'Import';
+    }
+    routeTypeRevenue[type] += totalCharge;
+  });
+
+  return Object.keys(routeTypeRevenue).map(name => ({
+    name,
+    value: routeTypeRevenue[name]
+  })).filter(item => item.value > 0); // Only include types with actual revenue
+}
+
+
+// NEW API: Get Dashboard Data (Consolidated) - Updated for monthly summary & route type breakdown
+app.get("/api/dashboard-data", async (req, res) => {
+  try {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1; // 1-12
+
+    // Fetch monthly summary for top cards
+    const monthlySummary = await _getMonthlySummaryData(currentYear, currentMonth);
+
+    // --- All Trips for trends and breakdowns ---
+    const allTrips = await dbAll(`SELECT car_no, start_date, total_charge, fuel_cost, driver_name, from_location, to_location, trip_type FROM trips`);
+
+    // --- Monthly Trips by Car ---
+    const tripsByCarMonth = {};
+    allTrips.forEach(trip => {
+      const monthYear = new Date(trip.start_date).toLocaleString('my-MM', { month: 'short', year: 'numeric' });
+      if (!tripsByCarMonth[monthYear]) {
+        tripsByCarMonth[monthYear] = {};
+      }
+      if (!tripsByCarMonth[monthYear][trip.car_no]) {
+        tripsByCarMonth[monthYear][trip.car_no] = 0;
+      }
+      tripsByCarMonth[monthYear][trip.car_no]++;
+    });
+    const monthlyTripsData = Object.keys(tripsByCarMonth).sort((a, b) => new Date(a) - new Date(b)).map(month => {
+      return { month, ...tripsByCarMonth[month] };
+    });
+
+    // --- Monthly Total & Net Revenue by Car ---
+    const revenueByCarMonth = {};
+    allTrips.forEach(trip => {
+      const monthYear = new Date(trip.start_date).toLocaleString('my-MM', { month: 'short', year: 'numeric' });
+      if (!revenueByCarMonth[monthYear]) {
+        revenueByCarMonth[monthYear] = {};
+      }
+      if (!revenueByCarMonth[monthYear][trip.car_no]) {
+        revenueByCarMonth[monthYear][trip.car_no] = { totalRevenue: 0, netRevenue: 0 };
+      }
+      revenueByCarMonth[monthYear][trip.car_no].totalRevenue += trip.total_charge || 0;
+      revenueByCarMonth[monthYear][trip.car_no].netRevenue += (trip.total_charge || 0) - (trip.fuel_cost || 0);
+    });
+    const carMonthlyRevenueData = Object.keys(revenueByCarMonth).sort((a, b) => new Date(a) - new Date(b)).map(month => {
+      const monthData = { month };
+      Object.keys(revenueByCarMonth[month]).forEach(carNo => {
+        monthData[`${carNo}_total`] = revenueByCarMonth[month][carNo].totalRevenue;
+        monthData[`${carNo}_net`] = revenueByCarMonth[month][carNo].netRevenue;
+      });
+      return monthData;
+    });
+
+    // --- Net Revenue by Driver ---
+    const driverRevenue = {};
+    allTrips.forEach(trip => {
+      if (trip.driver_name && trip.driver_name !== 'N/A') {
+        if (!driverRevenue[trip.driver_name]) {
+          driverRevenue[trip.driver_name] = 0;
+        }
+        driverRevenue[trip.driver_name] += (trip.total_charge || 0) - (trip.fuel_cost || 0);
+      }
+    });
+    const driverNetRevenueData = Object.keys(driverRevenue).map(driver => ({
+      driver,
+      netRevenue: driverRevenue[driver]
+    })).sort((a, b) => b.netRevenue - a.netRevenue);
+
+    // --- Revenue Breakdown by Route Type (Export/Import) ---
+    const routeTypeRevenueData = _getRouteTypeRevenueData(allTrips);
+
+    // --- Overall Expenses Summary & Expenses by Category ---
+    const allFuelLogs = await dbAll(`SELECT car_no, fuel_amount, fuel_cost, log_datetime FROM fuel_logs`);
+    const allMaintenanceLogs = await dbAll(`SELECT description, cost FROM car_maintenance`);
+    const allGeneralExpensesLogs = await dbAll(`SELECT description, cost FROM general_expenses`);
+    const allDrivers = await dbAll(`SELECT name, monthly_salary FROM drivers`); // Get actual monthly salaries
+
+    const totalFuelCostAll = allFuelLogs.reduce((sum, log) => sum + (log.fuel_cost || 0), 0);
+    const totalMaintenanceCostAll = allMaintenanceLogs.reduce((sum, item) => sum + (item.cost || 0), 0);
+    const totalGeneralExpensesAll = allGeneralExpensesLogs.reduce((sum, item) => sum + (item.cost || 0), 0);
+    const totalDriverSalariesAll = allDrivers.reduce((sum, driver) => sum + (driver.monthly_salary || 0), 0); // Sum of current monthly salaries
+
+    const expensesSummaryData = [
+      { name: 'လောင်စာဆီ ကုန်ကျစရိတ်', value: totalFuelCostAll },
+      { name: 'ပြင်ဆင်စရိတ်', value: totalMaintenanceCostAll },
+      { name: 'အထွေထွေ ကုန်ကျစရိတ်', value: totalGeneralExpensesAll },
+      { name: 'ယာဉ်မောင်း လစာ', value: totalDriverSalariesAll }, // All current monthly salaries
+    ];
+
+    const expensesByCategoryMap = {};
+    allMaintenanceLogs.forEach(item => {
+      if (!expensesByCategoryMap[item.description]) {
+        expensesByCategoryMap[item.description] = 0;
+      }
+      expensesByCategoryMap[item.description] += (item.cost || 0);
+    });
+    allGeneralExpensesLogs.forEach(item => {
+      if (!expensesByCategoryMap[item.description]) {
+        expensesByCategoryMap[item.description] = 0;
+      }
+      expensesByCategoryMap[item.description] += (item.cost || 0);
+    });
+    const expensesByCategoryData = Object.keys(expensesByCategoryMap).map(cat => ({
+      name: cat,
+      value: expensesByCategoryMap[cat]
+    })).sort((a, b) => b.value - a.value);
+
+    // --- Fuel Efficiency and Total Fuel Consumed ---
+    const allFuelReadings = await dbAll(`SELECT car_no, km_per_gallon FROM fuel_readings`);
+    const carFuelEfficiency = {};
+    allFuelReadings.forEach(reading => {
+      if (!carFuelEfficiency[reading.car_no]) {
+        carFuelEfficiency[reading.car_no] = { totalKmPerGallon: 0, count: 0 };
+      }
+      carFuelEfficiency[reading.car_no].totalKmPerGallon += (reading.km_per_gallon || 0);
+      carFuelEfficiency[reading.car_no].count++;
+    });
+    const fuelEfficiencyData = Object.keys(carFuelEfficiency).map(carNo => ({
+      car_no: carNo,
+      avgKmPerGallon: carFuelEfficiency[carNo].count > 0 ? (carFuelEfficiency[carNo].totalKmPerGallon / carFuelEfficiency[carNo].count) : 0,
+    })).sort((a, b) => b.avgKmPerGallon - a.avgKmPerGallon);
+
+    const carTotalFuelConsumed = {};
+    allFuelLogs.forEach(log => {
+      if (!carTotalFuelConsumed[log.car_no]) {
+        carTotalFuelConsumed[log.car_no] = 0;
+      }
+      carTotalFuelConsumed[log.car_no] += (log.fuel_amount || 0);
+    });
+    const totalFuelConsumedData = Object.keys(carTotalFuelConsumed).map(carNo => ({
+      car_no: carNo,
+      totalFuelConsumed: carTotalFuelConsumed[carNo],
+    })).sort((a, b) => b.totalFuelConsumed - a.totalFuelConsumed);
+
+    // --- Current Month Car Revenue (Cards) ---
+    const currentMonthTrips = allTrips.filter(trip => {
+      const tripDate = new Date(trip.start_date);
+      return tripDate.getFullYear() === currentYear && (tripDate.getMonth() + 1) === currentMonth;
+    });
+    const currentMonthRevenueMap = {};
+    currentMonthTrips.forEach(trip => {
+      if (!currentMonthRevenueMap[trip.car_no]) {
+        currentMonthRevenueMap[trip.car_no] = 0;
+      }
+      currentMonthRevenueMap[trip.car_no] += (trip.total_charge || 0) - (trip.fuel_cost || 0);
+    });
+    const currentMonthCarRevenue = Object.keys(currentMonthRevenueMap).map(carNo => ({
+      car_no: carNo,
+      netRevenue: currentMonthRevenueMap[carNo]
+    }));
+
+
+    res.json({
+      message: "success",
+      data: {
+        monthlyTripsData,
+        carMonthlyRevenueData,
+        driverNetRevenueData,
+        revenueBreakdownData: routeTypeRevenueData, // Changed to routeTypeRevenueData
+        expensesSummaryData,
+        expensesByCategoryData,
+        fuelEfficiencyData,
+        totalFuelConsumedData,
+        currentMonthCarRevenue,
+        totalTripsCount: monthlySummary.monthlyTripsCount, // Monthly value
+        totalRevenueSum: monthlySummary.monthlyRevenueSum,   // Monthly value
+        totalExpensesSum: monthlySummary.monthlyExpensesSum, // Monthly value
+        totalNetRevenueSum: monthlySummary.monthlyNetRevenueSum, // Monthly value
+      }
+    });
+
+  } catch (err) {
+    console.error("Error fetching dashboard data:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Get all unique car numbers from the database for actual use
+app.get("/api/all-unique-car-numbers", async (req, res) => {
+  try {
+    const carNumbers = await dbAll(`SELECT DISTINCT car_no FROM trips UNION SELECT DISTINCT car_no FROM car_maintenance UNION SELECT DISTINCT car_no FROM fuel_logs UNION SELECT DISTINCT car_no FROM fuel_readings UNION SELECT DISTINCT car_no FROM car_driver_assignments`);
+    const uniqueCarNumbers = Array.from(new Set(carNumbers.map(row => row.car_no))).sort();
+    res.json({ message: "success", data: uniqueCarNumbers });
+  } catch (err) {
+    console.error("Error fetching all unique car numbers:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Get all driver names from the database for actual use
+app.get("/api/all-driver-names", async (req, res) => {
+  try {
+    const drivers = await dbAll(`SELECT name FROM drivers`);
+    const driverNames = drivers.map(row => row.name).sort();
+    res.json({ message: "success", data: driverNames });
+  } catch (err) {
+    console.error("Error fetching all driver names:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Get all unique trip types from the database for actual use
+app.get("/api/all-trip-types", async (req, res) => {
+  try {
+    const tripTypes = await dbAll(`SELECT DISTINCT trip_type FROM trips WHERE trip_type IS NOT NULL AND trip_type != ''`);
+    const uniqueTripTypes = tripTypes.map(row => row.trip_type).sort();
+    res.json({ message: "success", data: uniqueTripTypes });
+  } catch (err) {
+    console.error("Error fetching all trip types:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW API: Get all unique expense descriptions (categories) from maintenance and general expenses
+app.get("/api/all-expense-categories", async (req, res) => {
+  try {
+    const maintenanceDescriptions = await dbAll(`SELECT DISTINCT description FROM car_maintenance`);
+    const generalExpenseDescriptions = await dbAll(`SELECT DISTINCT description FROM general_expenses`);
+
+    const allDescriptions = [
+      ...maintenanceDescriptions.map(row => row.description),
+      ...generalExpenseDescriptions.map(row => row.description)
+    ];
+    const uniqueDescriptions = Array.from(new Set(allDescriptions)).sort();
+    res.json({ message: "success", data: uniqueDescriptions });
+  } catch (err) {
+    console.error("Error fetching all expense categories:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 
