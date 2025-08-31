@@ -1,12 +1,12 @@
 {
   "builds": [
     {
-      "src": "myan-san/package.json",
-      "use": "@vercel/static-build"
-    },
-    {
       "src": "Backend/server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "myan-san/package.json",
+      "use": "@vercel/static-build"
     }
   ],
   "rewrites": [
@@ -16,7 +16,7 @@
     },
     {
       "source": "/(.*)",
-      "destination": "/myan-san/index.html"
+      "destination": "/myan-san/build/index.html"
     }
   ]
 }
