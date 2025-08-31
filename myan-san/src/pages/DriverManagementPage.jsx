@@ -1,5 +1,5 @@
 // myan-san/src/pages/DriverManagementPage.jsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import {
     Container,
@@ -25,14 +25,11 @@ import {
     InputLabel,
     Select,
     CircularProgress,
-    Alert,
-    Collapse // Import Collapse for smooth toggle animation
+    Alert
 } from '@mui/material';
 import {
     Edit as EditIcon, Delete as DeleteIcon, Save as SaveIcon, Cancel as CancelIcon,
-    History as HistoryIcon, // For salary history
-    Group as GroupIcon, // For driver assignment history
-    ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon // For collapse
+    History as HistoryIcon
 } from '@mui/icons-material';
 import carNumbersData from '../data/carNumbers.json'; // carNumbers.json ကို import လုပ်ပါ။
 import { formatMMK } from '../utils/currencyFormatter'; // formatMMK ကို import လုပ်ပါ။
@@ -63,7 +60,7 @@ function DriverManagementPage() {
     const [carNumbers, setCarNumbers] = useState([]); // Backend (DB) မှ ရရှိသော ထူးခြားသည့် ကားနံပါတ်များအားလုံး
     const [carAssignments, setCarAssignments] = useState([]); // လက်ရှိ active ဖြစ်နေသော ကားချိတ်ဆက်မှုများ
     const [assignedCarNo, setAssignedCarNo] = useState(''); // ပြင်ဆင်နေသော/ကြည့်ရှုနေသော ယာဉ်မောင်းနှင့် ချိတ်ဆက်ထားသော ကားနံပါတ်
-    const [assignedDriverName, setAssignedDriverName] = useState(''); // ပြင်ဆင်နေသော/ကြည့်ရှုနေသော ကားနှင့် ချိတ်ဆက်ထားသော ယာဉ်မောင်းအမည်
+    // const [assignedDriverName, setAssignedDriverName] = useState(''); // ပြင်ဆင်နေသော/ကြည့်ရှုနေသော ကားနှင့် ချိတ်ဆက်ထားသော ယာဉ်မောင်းအမည်
     const [assignedDate, setAssignedDate] = useState(new Date().toISOString().split('T')[0]); // Default အနေဖြင့် ယနေ့ရက်စွဲ
 
     // လစဉ်ဝင်ငွေတွက်ချက်မှုအတွက် State
@@ -330,11 +327,11 @@ function DriverManagementPage() {
 
         try {
             // 1. ယာဉ်မောင်းအသစ်ထည့်သွင်းခြင်း (backend က ကနဦးလစာမှတ်တမ်းကိုပါ ဖန်တီးပေးသည်)
-            const driverResponse = await axios.post(`${API_BASE_URL}/drivers`, { 
-                name: driverName, 
-                monthly_salary: parsedMonthlySalary,
-                salaryEffectiveDate: newDriverAssignedDate
-            });
+            // const driverResponse = await axios.post(`${API_BASE_URL}/drivers`, { 
+            //     name: driverName, 
+            //     monthly_salary: parsedMonthlySalary,
+            //     salaryEffectiveDate: newDriverAssignedDate
+            // });
             
             // Backend က 'id' ကို ပြန်ပေးသည်။
             const newDriverName = driverName; // ချိတ်ဆက်မှုအတွက် ယာဉ်မောင်းအမည်ကို အသုံးပြု
@@ -384,11 +381,11 @@ function DriverManagementPage() {
         const currentAssignment = carAssignments.find(assignment => assignment.driver_name === driver.name);
         if (currentAssignment) {
             setAssignedCarNo(currentAssignment.car_no);
-            setAssignedDriverName(currentAssignment.driver_name); 
+            // setAssignedDriverName(currentAssignment.driver_name); 
             setAssignedDate(currentAssignment.assigned_date);
         } else {
             setAssignedCarNo('');
-            setAssignedDriverName(driver.name); 
+            // setAssignedDriverName(driver.name); 
             setAssignedDate(new Date().toISOString().split('T')[0]); // ချိတ်ဆက်မှုမရှိသေးပါက ယနေ့ရက်စွဲကို Default ထား
         }
     };
@@ -460,7 +457,7 @@ function DriverManagementPage() {
             setEditingDriverId(null);
             setEditDriverName('');
             setAssignedCarNo('');
-            setAssignedDriverName('');
+            // setAssignedDriverName('');
             setAssignedDate(new Date().toISOString().split('T')[0]); 
             fetchDrivers(); // ယာဉ်မောင်းစာရင်းကို ပြန်လည်ရယူခြင်း
             fetchCarAssignments(); // ကားချိတ်ဆက်မှုများကို ပြန်လည်ရယူခြင်း
@@ -486,7 +483,7 @@ function DriverManagementPage() {
         setEditingDriverId(null);
         setEditDriverName('');
         setAssignedCarNo('');
-        setAssignedDriverName('');
+        // setAssignedDriverName('');
         setAssignedDate(new Date().toISOString().split('T')[0]); 
     };
 

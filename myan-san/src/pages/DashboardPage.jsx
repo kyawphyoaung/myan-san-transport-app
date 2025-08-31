@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useCallback } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line
+  PieChart, Pie, Cell
 } from 'recharts';
 import { useApp } from '../components/AppProvider';
 import { Switch } from '@mui/material';
@@ -262,7 +262,7 @@ const DashboardPage = () => {
   const [useMockData, setUseMockData] = useState(true);
 
   // Define theme colors
-  const primaryChartColor = isDarkMode ? '#8c55ff' : '#4a5568';
+  // const primaryChartColor = isDarkMode ? '#8c55ff' : '#4a5568';
   const gridStrokeColor = isDarkMode ? '#4a5568' : '#e0e0e0';
   const axisLabelColor = isDarkMode ? '#cbd5e0' : '#4a5568';
 
@@ -294,7 +294,7 @@ const DashboardPage = () => {
 
   const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -317,7 +317,7 @@ const DashboardPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  },[API_BASE_URL]);
 
   const processMockData = () => {
     const currentYear = new Date().getFullYear();
@@ -477,10 +477,10 @@ const DashboardPage = () => {
     } else {
       fetchDashboardData();
     }
-  }, [useMockData]);
+  }, [useMockData,fetchDashboardData]);
 
   // Determine which car numbers to show based on selected data source
-  const allCarNumbers = CAR_NUMBERS; // Use fixed CAR_NUMBERS for consistency in charts
+  // const allCarNumbers = CAR_NUMBERS; // Use fixed CAR_NUMBERS for consistency in charts
 
   const currentMonthLabel = getMonthName(new Date().toISOString().split('T')[0]).split(' ')[0]; // e.g., "May"
 

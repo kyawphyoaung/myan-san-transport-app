@@ -1,17 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import {
     Container, Typography, Box, TextField, Button, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, Paper, IconButton, Dialog, DialogActions,
-    DialogContent, DialogTitle, MenuItem, FormControl, InputLabel, Select,
-    CircularProgress, Alert, Collapse, Tooltip, DialogContentText
+    DialogContent, DialogTitle, CircularProgress, Alert, Tooltip, DialogContentText
 } from '@mui/material';
 import {
-    Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, History as HistoryIcon,
-    CheckCircleOutline as CheckCircleOutlineIcon, InfoOutlined as InfoOutlinedIcon,
-    ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon,
-    ContentCopy as ContentCopyIcon, Save as SaveIcon, Cancel as CancelIcon,
-    DragIndicator as DragIndicatorIcon
+    Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, CheckCircleOutline as CheckCircleOutlineIcon, InfoOutlined as InfoOutlinedIcon, ContentCopy as ContentCopyIcon, DragIndicator as DragIndicatorIcon
 } from '@mui/icons-material';
 import {
     DndContext,
@@ -85,7 +80,7 @@ function EmptyChargeManagementPage() {
     const [viewingVersionDetails, setViewingVersionDetails] = useState([]);
 
     // State for filter collapse
-    const [showFilters, setShowFilters] = useState(false);
+    // const [showFilters, setShowFilters] = useState(false);
 
     // Dnd-kit sensors
     const sensors = useSensors(

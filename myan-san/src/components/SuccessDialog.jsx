@@ -1,14 +1,9 @@
-import React from "react";
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
+  Dialog, DialogContent, DialogActions,
   Button,
   Box,
   Typography,
-  IconButton,
+  IconButton
 } from "@mui/material";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import CloseIcon from "@mui/icons-material/Close";

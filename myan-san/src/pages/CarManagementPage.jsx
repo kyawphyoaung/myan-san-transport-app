@@ -1,5 +1,5 @@
 // myan-san/src/pages/CarManagementPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect,useCallback } from 'react';
 import { formatMMK } from '../utils/currencyFormatter';
 import carNumbersData from '../data/carNumbers.json'; // carNumbers.json ကို import လုပ်ပါ။
 import {
@@ -176,32 +176,10 @@ function CarManagementPage() {
     };
 
     fetchAndCombineCarNumbers();
-  }, [selectedCarNo]); // Run once on component mount
-
-  // Selected Car No, Filter, and Sort options ပြောင်းလဲသောအခါ သက်ဆိုင်ရာ records များကို fetch လုပ်ခြင်း
-  // This useEffect will now be triggered by filterTrigger or selectedCarNo/activeTab changes
-  useEffect(() => {
-    if (selectedCarNo) {
-      // Determine filter description based on active tab
-      let currentFilterDescription = '';
-      let currentFilterOtherDescription = '';
-
-      if (activeTab === 'maintenance') {
-        currentFilterDescription = maintenanceFilterDescription;
-        currentFilterOtherDescription = maintenanceFilterOtherDescription;
-      } else if (activeTab === 'general') {
-        currentFilterDescription = generalExpenseFilterDescription;
-        currentFilterOtherDescription = generalExpenseFilterOtherDescription;
-      }
-
-      fetchCarMaintenanceRecords(selectedCarNo, filterYear, filterMonth, sortColumn, sortDirection, currentFilterDescription, currentFilterOtherDescription);
-      fetchFuelLogs(selectedCarNo, filterYear, filterMonth, sortColumn, sortDirection); // Fuel logs don't have description filter
-      fetchGeneralExpenses(selectedCarNo, filterYear, filterMonth, sortColumn, sortDirection, currentFilterDescription, currentFilterOtherDescription);
-    }
-  }, [selectedCarNo, activeTab, filterTrigger, filterYear, filterMonth, sortColumn, sortDirection, maintenanceFilterDescription, maintenanceFilterOtherDescription, generalExpenseFilterDescription, generalExpenseFilterOtherDescription]); // Added filter and sort dependencies and filterTrigger
+  }, [selectedCarNo,API_BASE_URL]); // Run once on component mount
 
   // Car Maintenance Records များကို fetch လုပ်ခြင်း
-  const fetchCarMaintenanceRecords = async (carNo, year, month, sortCol, sortDir, descriptionFilter, otherDescriptionFilter) => {
+  const fetchCarMaintenanceRecords = useCallback(async (carNo, year, month, sortCol, sortDir, descriptionFilter, otherDescriptionFilter) => {
     try {
       let queryParams = new URLSearchParams();
       if (year) queryParams.append('year', year);
@@ -241,10 +219,10 @@ function CarManagementPage() {
     } catch (error) {
       console.error(`Error fetching maintenance records for ${carNo}:`, error);
     }
-  };
+  },[API_BASE_URL]);
 
   // Fuel Logs များကို fetch လုပ်ခြင်း
-  const fetchFuelLogs = async (carNo, year, month, sortCol, sortDir) => {
+  const fetchFuelLogs = useCallback(async (carNo, year, month, sortCol, sortDir) => {
     try {
       let queryParams = new URLSearchParams();
       if (year) queryParams.append('year', year);
@@ -278,10 +256,10 @@ function CarManagementPage() {
     } catch (error) {
       console.error(`Error fetching fuel logs for ${carNo}:`, error);
     }
-  };
+  },[API_BASE_URL]);
 
   // General Expenses များကို fetch လုပ်ခြင်း
-  const fetchGeneralExpenses = async (carNo, year, month, sortCol, sortDir, descriptionFilter, otherDescriptionFilter) => {
+  const fetchGeneralExpenses = useCallback(async (carNo, year, month, sortCol, sortDir, descriptionFilter, otherDescriptionFilter) => {
     try {
       let queryParams = new URLSearchParams();
       if (year) queryParams.append('year', year);
@@ -320,7 +298,31 @@ function CarManagementPage() {
     } catch (error) {
       console.error(`Error fetching general expenses for ${carNo}:`, error);
     }
-  };
+  },[API_BASE_URL]);
+
+
+  // Selected Car No, Filter, and Sort options ပြောင်းလဲသောအခါ သက်ဆိုင်ရာ records များကို fetch လုပ်ခြင်း
+  // This useEffect will now be triggered by filterTrigger or selectedCarNo/activeTab changes
+  useEffect(() => {
+    if (selectedCarNo) {
+      // Determine filter description based on active tab
+      let currentFilterDescription = '';
+      let currentFilterOtherDescription = '';
+
+      if (activeTab === 'maintenance') {
+        currentFilterDescription = maintenanceFilterDescription;
+        currentFilterOtherDescription = maintenanceFilterOtherDescription;
+      } else if (activeTab === 'general') {
+        currentFilterDescription = generalExpenseFilterDescription;
+        currentFilterOtherDescription = generalExpenseFilterOtherDescription;
+      }
+
+      fetchCarMaintenanceRecords(selectedCarNo, filterYear, filterMonth, sortColumn, sortDirection, currentFilterDescription, currentFilterOtherDescription);
+      fetchFuelLogs(selectedCarNo, filterYear, filterMonth, sortColumn, sortDirection); // Fuel logs don't have description filter
+      fetchGeneralExpenses(selectedCarNo, filterYear, filterMonth, sortColumn, sortDirection, currentFilterDescription, currentFilterOtherDescription);
+    }
+  }, [selectedCarNo, activeTab, filterTrigger, filterYear, filterMonth, sortColumn, sortDirection, maintenanceFilterDescription, maintenanceFilterOtherDescription, generalExpenseFilterDescription, generalExpenseFilterOtherDescription, fetchCarMaintenanceRecords, fetchFuelLogs, fetchGeneralExpenses]);
+
 
   // Car No Dropdown အတွက် Handle Change
   const handleCarNoChange = (e) => {

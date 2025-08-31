@@ -101,8 +101,8 @@ const EditTripDialog = ({
     editFormData.from,
     editFormData.to,
     editFormData.kmTravelled, // <-- ဒီနေရာကိုလည်း ထည့်ပါ
-    originalKmTravelled, // <-- ဒီနေရာကိုလည်း ထည့်ပါ
-    kmData,
+    originalKmTravelled,
+    setEditFormData,
     // ... other dependencies
   ]);
 

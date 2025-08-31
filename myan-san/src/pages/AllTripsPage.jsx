@@ -117,7 +117,7 @@ function AllTripsPage() {
   const [currentRouteCharges, setCurrentRouteCharges] = useState([]);
   const [driverNames, setDriverNames] = useState([]);
   const [carDriverAssignments, setCarDriverAssignments] = useState([]);
-  const [originalKmTravelled, setOriginalKmTravelled] = useState(0);
+  // const [originalKmTravelled, setOriginalKmTravelled] = useState(0);
 
   const [filter, setFilter] = useState({
     searchCarNo: "",
@@ -157,7 +157,7 @@ function AllTripsPage() {
   const [orderBy, setOrderBy] = useState("date");
   const [showFilters, setShowFilters] = useState(false); // State for filter section visibility
   const [portLocationsSet, setPortLocationsSet] = useState(new Set());
-  const [emptyChargeData, setEmptyChargeData] = useState(null);
+  // const [emptyChargeData, setEmptyChargeData] = useState(null);
   const [emptyLocationsOptions, setEmptyLocationsOptions] = useState([]);
   const [agentNames, setAgentNames] = useState([]);
 
@@ -168,7 +168,7 @@ function AllTripsPage() {
     try {
       const res = await axios.get(`${API_BASE_URL}/api/empty-charges/active`);
       const data = res.data.data.emptyCharges;
-      setEmptyChargeData(data);
+      // setEmptyChargeData(data);
       setEmptyLocationsOptions(
         data.empty_locations_charges.map((loc) => loc.location)
       );
@@ -178,9 +178,9 @@ function AllTripsPage() {
       setError(
         "အခွံချ/အခွံတင် စျေးနှုန်းများ ရယူရာတွင် အမှားအယွင်းရှိခဲ့ပါသည်။"
       );
-      setEmptyChargeData(null);
+      // setEmptyChargeData(null);
     }
-  }, []);
+  }, [API_BASE_URL]);
 
   // Agent အမည်များကို Backend မှ fetch လုပ်ရန် function
   const fetchAgentNames = useCallback(async () => {
@@ -322,7 +322,7 @@ function AllTripsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter, orderBy, order, applyFilters]);
+  }, [filter, orderBy, order, applyFilters, API_BASE_URL]);
 
   const fetchDriverNames = useCallback(async () => {
     try {
@@ -336,7 +336,7 @@ function AllTripsPage() {
     } catch (error) {
       console.error("Error fetching driver names:", error);
     }
-  }, []);
+  }, [API_BASE_URL]);
 
   const fetchCarDriverAssignments = useCallback(async () => {
     try {
@@ -352,7 +352,7 @@ function AllTripsPage() {
     } catch (error) {
       console.error("Error fetching car-driver assignments:", error);
     }
-  }, []);
+  }, [API_BASE_URL]);
 
   // Edit Dialog Point Change Logic
   const handleEditAddPointChange = () => {
@@ -426,6 +426,7 @@ function AllTripsPage() {
     fetchCarDriverAssignments,
     fetchAgentNames,
     fetchEmptyChargeData,
+    API_BASE_URL,
   ]);
 
   const handleFilterChange = (e) => {
@@ -1132,7 +1133,7 @@ function AllTripsPage() {
 
                   // --- Updated Display Remarks Logic for Table ---
                   let displayRemarks = "";
-                  let cargoLoadRemark = "";
+                  // let cargoLoadRemark = "";
                   let routeType = "none";
                   if (portLocationsSet.has(trip.from_location)) {
                     routeType = "import";
@@ -1142,52 +1143,52 @@ function AllTripsPage() {
 
                   if (routeType === "export") {
                     if (trip.cargo_load_type === "normal") {
-                      const cargoLoadDateObj = parseISO(trip.cargo_load_date);
-                      cargoLoadRemark = `အသားတင် ${format(
-                        cargoLoadDateObj,
-                        "MM-dd"
-                      )} `;
+                      // const cargoLoadDateObj = parseISO(trip.cargo_load_date);
+                      // cargoLoadRemark = `အသားတင် ${format(
+                      //   cargoLoadDateObj,
+                      //   "MM-dd"
+                      // )} `;
                     } else if (trip.cargo_load_type === "sameDay") {
-                      cargoLoadRemark = "ပတ်မောင်း ";
+                      // cargoLoadRemark = "ပတ်မောင်း ";
                     } else if (trip.cargo_load_type === "custom") {
-                      const cargoLoadDateObj = parseISO(trip.cargo_load_date);
-                      cargoLoadRemark = `အသားတင် ${format(
-                        cargoLoadDateObj,
-                        "MM-dd"
-                      )} `;
+                      // const cargoLoadDateObj = parseISO(trip.cargo_load_date);
+                      // cargoLoadRemark = `အသားတင် ${format(
+                      //   cargoLoadDateObj,
+                      //   "MM-dd"
+                      // )} `;
                     }
                   }
 
-                  let tripTypeRemark = "";
-                  if (trip.trip_type === "tinSit") {
-                    tripTypeRemark = "တင်စစ် ";
-                  } else if (trip.trip_type === "pointPyaat") {
-                    tripTypeRemark = "ပွိုင့်ပျက် ";
-                  }
+                  // let tripTypeRemark = "";
+                  // if (trip.trip_type === "tinSit") {
+                  //   tripTypeRemark = "တင်စစ် ";
+                  // } else if (trip.trip_type === "pointPyaat") {
+                  //   tripTypeRemark = "ပွိုင့်ပျက် ";
+                  // }
 
                   //return ထဲက filtered Trips ထဲက ပွိုင့်ချိန်း
-                  let pointChangeRemark = "";
-                  let parsedPointChangeLocations = [];
+                  // let pointChangeRemark = "";
+                  // let parsedPointChangeLocations = [];
                   try {
                     const raw = trip.point_change_locations;
                     const parsed = raw ? JSON.parse(raw) : [];
 
                     // ✅ သေချာစစ်တာ — array ဖြစ်မှသာ assign လုပ်မယ်
                     if (Array.isArray(parsed)) {
-                      parsedPointChangeLocations = parsed;
+                      // parsedPointChangeLocations = parsed;
                     } else {
                       console.warn(
                         "point_change_locations ဟာ array မဟုတ်ပါ:",
                         parsed
                       );
-                      parsedPointChangeLocations = [];
+                      // parsedPointChangeLocations = [];
                     }
                   } catch (e) {
                     console.error(
                       "point_change_locations ကို JSON parse လုပ်တဲ့အချိန် error:",
                       e
                     );
-                    parsedPointChangeLocations = [];
+                    // parsedPointChangeLocations = [];
                   }
 
                   //Remarks တွေ တွက်ချက်ခြင်း
@@ -1330,7 +1331,7 @@ function AllTripsPage() {
         // FIX: setEditFormData ကို ထည့်ပါ
         setEditFormData={setEditFormData}
         // FIX: originalKmTravelled ကို ထည့်ပါ
-        originalKmTravelled={originalKmTravelled}
+        // originalKmTravelled={originalKmTravelled}
         // Display Props (တွက်ချက်ပြီးသား တန်ဖိုးများကို ပြသရန်)
         overnightCharges={editFormData.overnightCharges}
         dayOverCharges={editFormData.dayOverCharges}

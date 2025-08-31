@@ -34,14 +34,7 @@ import {
   Typography,
 } from "@mui/material";
 import axios from "axios"; // axios ကို import လုပ်ပေးခြင်း
-import {
-  addDays,
-  differenceInDays,
-  format,
-  isAfter,
-  isSameDay,
-  parseISO,
-} from "date-fns"; // date-fns functions
+import { addDays, format, parseISO } from "date-fns"; // date-fns functions
 import { saveAs } from "file-saver";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
@@ -171,10 +164,9 @@ function HomePage() {
     []
   );
   const [availableYears, setAvailableYears] = useState([]);
-  const [availableMonths, setAvailableMonths] = useState([]);
 
   // ရွေးချယ်ထားသော row များကို သိမ်းဆည်းရန် state
-  const [selectedRows, setSelectedRows] = useState(new Set());
+  // const [selectedRows, setSelectedRows] = useState(new Set());
 
   // Loading and Error/Success messages
   const [loading, setLoading] = useState(true);
@@ -200,7 +192,7 @@ function HomePage() {
 
   const [updatedTrip, setUpdatedTrip] = useState([]);
 
-  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || ''; // Backend API base URL ကို သတ်မှတ်ပါ။
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || ""; // Backend API base URL ကို သတ်မှတ်ပါ။
 
   // src/components/YourTableComponent.jsx (သို့) AllTripsPage.jsx
 
@@ -311,7 +303,7 @@ function HomePage() {
               .map((trip) => new Date(trip.start_date).getMonth() + 1)
           ),
         ].sort((a, b) => a - b);
-        setAvailableMonths(monthsForInitialYear);
+        // setAvailableMonths(monthsForInitialYear);
 
         let initialFilterMonth = monthsForInitialYear.includes(currentMonth)
           ? currentMonth
@@ -361,7 +353,7 @@ function HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [applyHomePageFilters]);
+  }, [applyHomePageFilters, API_BASE_URL]);
 
   // ယာဉ်မောင်းအမည်များကို Backend မှ fetch လုပ်ရန် function
   const fetchDriverNames = useCallback(async () => {
@@ -376,7 +368,7 @@ function HomePage() {
     } catch (error) {
       console.error("Error fetching driver names:", error);
     }
-  }, []);
+  }, [API_BASE_URL]);
 
   const fetchAgentNames = useCallback(async () => {
     try {
@@ -400,7 +392,7 @@ function HomePage() {
       console.error("Error fetching agent names:", error);
       setAgentNames([]); // Set to empty array on network error
     }
-  }, []);
+  }, [API_BASE_URL]);
 
   // ကား-ယာဉ်မောင်း ချိတ်ဆက်မှုများကို Backend မှ fetch လုပ်ရန် function
   const fetchCarDriverAssignments = useCallback(async () => {
@@ -417,7 +409,7 @@ function HomePage() {
     } catch (error) {
       console.error("Error fetching car-driver assignments:", error);
     }
-  }, []);
+  }, [API_BASE_URL]);
 
   // Fetch active empty charges data
   const fetchEmptyChargeData = useCallback(async () => {
@@ -436,7 +428,7 @@ function HomePage() {
       );
       setEmptyChargeData(null);
     }
-  }, []);
+  }, [API_BASE_URL]);
 
   // Component စတင်သောအခါ Backend မှ settings, route charges, trips နှင့် driver names များကို ရယူခြင်း
   useEffect(() => {
@@ -494,6 +486,7 @@ function HomePage() {
     fetchAgentNames,
     fetchCarDriverAssignments,
     fetchEmptyChargeData,
+    API_BASE_URL,
   ]);
 
   // Input field များ ပြောင်းလဲသောအခါ state ကို update လုပ်ရန် function (New Trip Form)
@@ -748,7 +741,7 @@ function HomePage() {
             .map((trip) => parseISO(trip.start_date).getMonth() + 1)
         ),
       ].sort((a, b) => a - b);
-      setAvailableMonths(monthsForSelectedYear);
+      // setAvailableMonths(monthsForSelectedYear);
       if (
         !monthsForSelectedYear.includes(filterMonth) &&
         monthsForSelectedYear.length > 0
@@ -758,7 +751,7 @@ function HomePage() {
         setFilterMonth("");
       }
     } else {
-      setAvailableMonths([]);
+      // setAvailableMonths([]);
       setFilterMonth("");
     }
   }, [filterYear, allTrips, filterMonth]);
@@ -1124,15 +1117,11 @@ function HomePage() {
 
     const newKmTravelled =
       kmData.find((k) => {
-        if (
-          k.start_point === formData.from &&
-          k.destination_point === formData.to
-        ) {
-          return (
-            k.start_point === formData.from &&
-            k.destination_point === formData.to
-          );
-        }
+        // This is a much cleaner way to write the same logic.
+        // It directly returns the boolean result of the condition.
+        return (
+          k.start_point === formData.from && k.destination_point === formData.to
+        );
       })?.km_value || 1;
 
     setFormData((prevData) => ({
@@ -1311,44 +1300,44 @@ function HomePage() {
       return;
     }
 
-    // --- Remarks Logic ---
-    let routeType = "none";
-    if (portLocationsSet.has(formData.from)) {
-      routeType = "import";
-    } else if (portLocationsSet.has(formData.to)) {
-      routeType = "export";
-    }
+    // // --- Remarks Logic ---
+    // let routeType = "none";
+    // if (portLocationsSet.has(formData.from)) {
+    //   routeType = "import";
+    // } else if (portLocationsSet.has(formData.to)) {
+    //   routeType = "export";
+    // }
 
-    let cargoLoadRemark = "";
-    if (routeType === "export") {
-      if (formData.cargoLoadType === "normal") {
-        const cargoLoadDateObj = parseISO(formData.cargoLoadDate);
-        cargoLoadRemark = `အသားတင် ${format(cargoLoadDateObj, "MM-dd")} `;
-      } else if (formData.cargoLoadType === "sameDay") {
-        cargoLoadRemark = "ပတ်မောင်း ";
-      } else if (formData.cargoLoadType === "custom") {
-        const cargoLoadDateObj = parseISO(formData.cargoLoadDate);
-        cargoLoadRemark = `အသားတင် ${format(cargoLoadDateObj, "MM-dd")} `;
-      }
-    }
+    // let cargoLoadRemark = "";
+    // if (routeType === "export") {
+    //   if (formData.cargoLoadType === "normal") {
+    //     const cargoLoadDateObj = parseISO(formData.cargoLoadDate);
+    //     // cargoLoadRemark = `အသားတင် ${format(cargoLoadDateObj, "MM-dd")} `;
+    //   } else if (formData.cargoLoadType === "sameDay") {
+    //     // cargoLoadRemark = "ပတ်မောင်း ";
+    //   } else if (formData.cargoLoadType === "custom") {
+    //     const cargoLoadDateObj = parseISO(formData.cargoLoadDate);
+    //     // cargoLoadRemark = `အသားတင် ${format(cargoLoadDateObj, "MM-dd")} `;
+    //   }
+    // }
 
-    let tripTypeRemark = "";
-    if (formData.tripType === "tinSit") {
-      tripTypeRemark = "တင်စစ် ";
-    } else if (formData.tripType === "pointPyat") {
-      tripTypeRemark = "ပွိုင့်ပျက် ";
-    }
+    // let tripTypeRemark = "";
+    // if (formData.tripType === "tinSit") {
+    //   tripTypeRemark = "တင်စစ် ";
+    // } else if (formData.tripType === "pointPyat") {
+    //   tripTypeRemark = "ပွိုင့်ပျက် ";
+    // }
 
-    let pointChangeRemark = "";
-    if (formData.pointChangeLocations.length > 0) {
-      const locations = formData.pointChangeLocations
-        .map((pc) => pc.location)
-        .join(", ");
-      const charges = formData.pointChangeLocations
-        .map((pc) => formatMMK(pc.charge))
-        .join(", ");
-      pointChangeRemark = `ပွိုင့်ချိန်း: ${locations} (${charges}) `;
-    }
+    // let pointChangeRemark = "";
+    // if (formData.pointChangeLocations.length > 0) {
+    //   const locations = formData.pointChangeLocations
+    //     .map((pc) => pc.location)
+    //     .join(", ");
+    //   const charges = formData.pointChangeLocations
+    //     .map((pc) => formatMMK(pc.charge))
+    //     .join(", ");
+    //   pointChangeRemark = `ပွိုင့်ချိန်း: ${locations} (${charges}) `;
+    // }
 
     // Corrected tripDataToSave object to match database columns
     const tripDataToSave = {
@@ -3035,7 +3024,7 @@ function HomePage() {
                           routeType = "import";
                         }
 
-                        const isSelected = selectedRows.has(trip.id);
+                        // const isSelected = selectedRows.has(trip.id);
                         // Display Remark ရဲ့ အဓိက အချက်အလက် စုစည်းမှု
                         const coreRemark = `
                           ${trip.remarks || ""}
@@ -3045,7 +3034,6 @@ function HomePage() {
                         return (
                           <TableRow
                             key={trip.id}
-                            selected={isSelected}
                             sx={{ "&:hover": "" }}
                           >
                             <TableCell>{index + 1}</TableCell>
@@ -3338,7 +3326,7 @@ function HomePage() {
                 ) : (
                   sortedTrips.map((trip, index) => {
                     // --- Updated Display Remarks Logic for Print Table ---
-                    let displayRemarks = "";
+                    // let displayRemarks = "";
 
                     //Remarks တွေ တွက်ချက်ခြင်း
                     const cargoLoadDay = trip.cargo_load_date.split("-")[2];
@@ -3382,7 +3370,7 @@ function HomePage() {
                       remarksParts.push(coreRemark);
                     }
 
-                    displayRemarks = remarksParts.join(" ");
+                    // displayRemarks = remarksParts.join(" ");
 
                     let routeType = "";
                     if (portLocationsSet.has(trip.from_location)) {
