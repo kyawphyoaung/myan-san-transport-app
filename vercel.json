@@ -12,7 +12,11 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "/Backend/server.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/myan-san/index.html"
     }
   ]
 }
