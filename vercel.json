@@ -15,6 +15,18 @@
       "destination": "/Backend/server.js"
     },
     {
+      "source": "/static/(.*)",
+      "destination": "/myan-san/static/$1"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/myan-san/favicon.ico"
+    },
+    {
+      "source": "/manifest.json",
+      "destination": "/myan-san/manifest.json"
+    },
+    {
       "source": "/(.*)",
       "destination": "/myan-san/index.html"
     }
