@@ -6,7 +6,10 @@
     },
     {
       "src": "myan-san/package.json",
-      "use": "@vercel/static-build"
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "build"
+      }
     }
   ],
   "rewrites": [
