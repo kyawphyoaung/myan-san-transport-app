@@ -4,27 +4,5 @@
       "source": "/api/(.*)",
       "destination": "/api"
     }
-  ],
-  "builds": [
-    {
-      "src": "Backend/server.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "myan-san/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "build" }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/myan-san/build/$1"
-    }
   ]
 }
-
