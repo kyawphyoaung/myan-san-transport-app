@@ -1,34 +1,25 @@
 {
   "builds": [
     {
-      "src": "myan-san/package.json",
-      "use": "@vercel/static-build"
-    },
-    {
       "src": "Backend/server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "myan-san/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "build"
+      }
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "destination": "/Backend/server.js"
+      "src": "/api/(.*)",
+      "dest": "/Backend/server.js"
     },
     {
-      "source": "/static/(.*)",
-      "destination": "/myan-san/build/static/$1"
-    },
-    {
-      "source": "/favicon.ico",
-      "destination": "/myan-san/build/favicon.ico"
-    },
-    {
-      "source": "/manifest.json",
-      "destination": "/myan-san/build/manifest.json"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/myan-san/build/index.html"
+      "src": "/(.*)",
+      "dest": "/myan-san/build/$1"
     }
   ]
 }
