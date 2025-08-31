@@ -1,4 +1,14 @@
 {
+  "builds": [
+    {
+      "src": "myan-san/package.json",
+      "use": "@vercel/static-build"
+    },
+    {
+      "src": "Backend/server.js",
+      "use": "@vercel/node"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
