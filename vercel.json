@@ -12,14 +12,18 @@
       }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/Backend/server.js"
+      "source": "/api/(.*)",
+      "destination": "/Backend/server.js"
     },
     {
-      "src": "/(.*)",
-      "dest": "/myan-san/build/$1"
+      "source": "/static/(.*)",
+      "destination": "/myan-san/build/static/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/myan-san/build/index.html"
     }
   ]
 }
