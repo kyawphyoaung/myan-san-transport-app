@@ -17,7 +17,7 @@ import { useApp } from '../components/AppProvider';
 
 function CarManagementPage() {
   const { mode } = useApp();
-  const API_BASE_URL = 'http://localhost:5001';
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
 
   const [uniqueCarNumbers, setUniqueCarNumbers] = useState([]);
   const [selectedCarNo, setSelectedCarNo] = useState('');

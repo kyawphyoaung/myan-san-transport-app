@@ -30,7 +30,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { formatMMK } from '../utils/currencyFormatter';
 
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
 
 // Drag-and-drop အတွက် Custom Component များ
 const SortableRow = ({ item, children, ...props }) => {

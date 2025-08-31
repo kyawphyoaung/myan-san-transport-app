@@ -37,7 +37,7 @@ import {
 import carNumbersData from '../data/carNumbers.json'; // carNumbers.json ကို import လုပ်ပါ။
 import { formatMMK } from '../utils/currencyFormatter'; // formatMMK ကို import လုပ်ပါ။
 
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
 
 function DriverManagementPage() {
     const [drivers, setDrivers] = useState([]);

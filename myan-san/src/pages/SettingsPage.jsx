@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import axios from 'axios'; // For making API requests
 
 function SettingsPage() {
-  const API_BASE_URL = 'http://localhost:5001'; // Backend API base URL
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || ''; // Backend API base URL
 
   // State variables for export functionality
   const [isExporting, setIsExporting] = useState(false);

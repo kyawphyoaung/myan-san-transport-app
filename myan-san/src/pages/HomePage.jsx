@@ -200,7 +200,7 @@ function HomePage() {
 
   const [updatedTrip, setUpdatedTrip] = useState([]);
 
-  const API_BASE_URL = "http://localhost:5001"; // Backend API base URL ကို သတ်မှတ်ပါ။
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || ''; // Backend API base URL ကို သတ်မှတ်ပါ။
 
   // src/components/YourTableComponent.jsx (သို့) AllTripsPage.jsx
 

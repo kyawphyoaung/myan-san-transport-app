@@ -4,6 +4,7 @@ const sqlite3 = require("sqlite3").verbose();
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs"); // For reading static JSON file if needed, though we'll primarily use DB
+const { Client } = require('pg');
 
 const app = express();
 const PORT = 5001; // သင်ပြောင်းလဲထားသော Port နံပါတ်ကို သေချာစစ်ဆေးပါ။
@@ -12,6 +13,25 @@ const initialEmptyChargeData = require("./initialEmptyChargeData.json");
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+let database;
+
+// production (Vercel) မှာဆိုရင် Postgres ကိုချိတ်ဆက်ပါ။
+if (process.env.NODE_ENV === 'production') {
+  database = new Client({
+    connectionString: process.env.POSTGRES_URL,
+  });
+  database.connect((err) => {
+    if (err) console.error('Postgres connection error:', err.message);
+    else console.log('Connected to Vercel Postgres.');
+  });
+} else {
+  // local မှာဆိုရင်တော့ SQLite ကိုပဲ ဆက်သုံးပါ။
+  database = new sqlite3.Database('./database.db', (err) => {
+    if (err) console.error('SQLite connection error:', err.message);
+    else console.log('Connected to local SQLite database.');
+  });
+};
 
 // Database initialization
 const dbPath = path.resolve(__dirname, "database.db");
@@ -4199,7 +4219,14 @@ app.get("/api/all-expense-categories", async (req, res) => {
 });
 
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-});
+// // Start the server
+// app.listen(PORT, () => {
+//   console.log(`Server is running on http://localhost:${PORT}`);
+// });
+
+if (process.env.NODE_ENV !== 'production') {
+  const port = process.env.PORT || 5001;
+  app.listen(port, () => {
+    console.log(`Local server is running on port ${port}`);
+  });
+}

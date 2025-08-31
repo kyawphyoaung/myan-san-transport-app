@@ -45,7 +45,7 @@ import {
 } from "@mui/icons-material";
 import carNumbersData from "../data/carNumbers.json";
 
-const API_BASE_URL = "http://localhost:5001/api";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
 const ITEMS_PER_PAGE = 50;
 
 function FuelConsumptionPage() {

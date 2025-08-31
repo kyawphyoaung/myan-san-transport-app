@@ -292,11 +292,13 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '';
+
   const fetchDashboardData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:5001/api/dashboard-data');
+      const response = await fetch(`${API_BASE_URL}/api/dashboard-data`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -308,7 +310,7 @@ const DashboardPage = () => {
       }
     } catch (e) {
       console.error("Error fetching dashboard data:", e);
-      setError("Failed to load real data. Please ensure the backend server is running and accessible at http://localhost:5001.");
+      setError("Failed to load real data. Please ensure the backend server is running and accessible at http://localhost:5000.");
       // Fallback to mock data if real data fails
       setUseMockData(true);
       processMockData();
