@@ -1,15 +1,12 @@
 {
   "builds": [
     {
-      "src": "Backend/server.js",
-      "use": "@vercel/node"
+      "src": "myan-san/package.json",
+      "use": "@vercel/static-build"
     },
     {
-      "src": "myan-san/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "build"
-      }
+      "src": "Backend/server.js",
+      "use": "@vercel/node"
     }
   ],
   "rewrites": [
@@ -18,12 +15,8 @@
       "destination": "/Backend/server.js"
     },
     {
-      "source": "/static/(.*)",
-      "destination": "/myan-san/build/static/$1"
-    },
-    {
       "source": "/(.*)",
-      "destination": "/myan-san/build/index.html"
+      "destination": "/myan-san/index.html"
     }
   ]
 }
