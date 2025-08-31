@@ -16,19 +16,19 @@
     },
     {
       "source": "/static/(.*)",
-      "destination": "/myan-san/static/$1"
+      "destination": "/myan-san/build/static/$1"
     },
     {
       "source": "/favicon.ico",
-      "destination": "/myan-san/favicon.ico"
+      "destination": "/myan-san/build/favicon.ico"
     },
     {
       "source": "/manifest.json",
-      "destination": "/myan-san/manifest.json"
+      "destination": "/myan-san/build/manifest.json"
     },
     {
       "source": "/(.*)",
-      "destination": "/myan-san/index.html"
+      "destination": "/myan-san/build/index.html"
     }
   ]
 }
